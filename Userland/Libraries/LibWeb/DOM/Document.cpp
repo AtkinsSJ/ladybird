@@ -458,6 +458,7 @@ void Document::visit_edges(Cell::Visitor& visitor)
     visitor.visit(m_associated_inert_template_document);
     visitor.visit(m_appropriate_template_contents_owner_document);
     visitor.visit(m_pending_parsing_blocking_script);
+    visitor.visit(m_script_blocking_style_sheet_set);
     visitor.visit(m_history);
 
     visitor.visit(m_browsing_context);
@@ -2548,8 +2549,8 @@ String Document::dump_dom_tree_as_json() const
 // https://html.spec.whatwg.org/multipage/semantics.html#has-a-style-sheet-that-is-blocking-scripts
 bool Document::has_a_style_sheet_that_is_blocking_scripts() const
 {
-    // FIXME: 1. If document's script-blocking style sheet set is not empty, then return true.
-    if (m_script_blocking_style_sheet_counter > 0)
+    // 1. If document's script-blocking style sheet set is not empty, then return true.
+    if (!m_script_blocking_style_sheet_set.is_empty())
         return true;
 
     // 2. If document's node navigable is null, then return false.
@@ -2559,8 +2560,8 @@ bool Document::has_a_style_sheet_that_is_blocking_scripts() const
     // 3. Let containerDocument be document's node navigable's container document.
     auto container_document = navigable()->container_document();
 
-    // FIXME: 4. If containerDocument is non-null and containerDocument's script-blocking style sheet set is not empty, then return true.
-    if (container_document && container_document->m_script_blocking_style_sheet_counter > 0)
+    // 4. If containerDocument is non-null and containerDocument's script-blocking style sheet set is not empty, then return true.
+    if (container_document && !m_script_blocking_style_sheet_set.is_empty())
         return true;
 
     // 5. Return false

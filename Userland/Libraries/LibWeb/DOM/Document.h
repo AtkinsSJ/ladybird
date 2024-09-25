@@ -406,6 +406,7 @@ public:
     String dump_dom_tree_as_json() const;
 
     bool has_a_style_sheet_that_is_blocking_scripts() const;
+    HashTable<JS::NonnullGCPtr<DOM::Element>>& script_blocking_style_sheet_set() { return m_script_blocking_style_sheet_set; }
 
     bool is_fully_active() const;
     bool is_active() const;
@@ -822,8 +823,8 @@ private:
     // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#throw-on-dynamic-markup-insertion-counter
     u32 m_throw_on_dynamic_markup_insertion_counter { 0 };
 
-    // https://html.spec.whatwg.org/multipage/semantics.html#script-blocking-style-sheet-counter
-    u32 m_script_blocking_style_sheet_counter { 0 };
+    // https://html.spec.whatwg.org/multipage/semantics.html#script-blocking-style-sheet-set
+    HashTable<JS::NonnullGCPtr<DOM::Element>> m_script_blocking_style_sheet_set;
 
     JS::GCPtr<HTML::History> m_history;
 

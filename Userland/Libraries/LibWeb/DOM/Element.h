@@ -412,6 +412,8 @@ public:
     void resolve_counters(CSS::StyleProperties&);
     void inherit_counters();
 
+    bool contributes_a_script_blocking_style_sheet() const;
+
 protected:
     Element(Document&, DOM::QualifiedName);
     virtual void initialize(JS::Realm&) override;

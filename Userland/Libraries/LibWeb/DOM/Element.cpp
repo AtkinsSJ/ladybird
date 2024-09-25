@@ -43,6 +43,7 @@
 #include <LibWeb/HTML/HTMLFrameSetElement.h>
 #include <LibWeb/HTML/HTMLHtmlElement.h>
 #include <LibWeb/HTML/HTMLInputElement.h>
+#include <LibWeb/HTML/HTMLLinkElement.h>
 #include <LibWeb/HTML/HTMLOptGroupElement.h>
 #include <LibWeb/HTML/HTMLOptionElement.h>
 #include <LibWeb/HTML/HTMLSelectElement.h>
@@ -67,6 +68,7 @@
 #include <LibWeb/Painting/InlinePaintable.h>
 #include <LibWeb/Painting/PaintableBox.h>
 #include <LibWeb/Painting/ViewportPaintable.h>
+#include <LibWeb/SVG/SVGStyleElement.h>
 #include <LibWeb/WebIDL/AbstractOperations.h>
 #include <LibWeb/WebIDL/DOMException.h>
 #include <LibWeb/WebIDL/ExceptionOr.h>
@@ -2906,6 +2908,49 @@ void Element::inherit_counters()
 
     VERIFY(!element_counters || !element_counters->is_empty());
     m_counters_set = move(element_counters);
+}
+
+// https://html.spec.whatwg.org/multipage/semantics.html#contributes-a-script-blocking-style-sheet
+bool Element::contributes_a_script_blocking_style_sheet() const
+{
+    // An element el in the context of a Document of an HTML parser or XML parser contributes a
+    // script-blocking style sheet if all of the following are true:
+
+    // - FIXME: el was created by that Document's parser.
+
+    // - el is either a style element or a link element that was an external resource link
+    //   that contributes to the styling processing model when the el was created by the parser.
+    if (!is_html_style_element() && !is_svg_style_element()
+        // FIXME: For now, just see if "stylesheet" is in the rel list
+        && !(is_html_link_element() && static_cast<HTML::HTMLLinkElement const&>(*this).contributes_to_the_styling_processing_model())) {
+        return false;
+    }
+
+    // - el's media attribute's value matches the environment.
+    auto media = attribute(HTML::AttributeNames::media);
+    if (media.has_value()) {
+        // FIXME: Parsing and evaluating this each time feels very wasteful
+        auto media_query_list = parse_media_query_list(CSS::Parser::ParsingContext { realm() }, media.value());
+        bool matches = false;
+        for (auto& query : media_query_list) {
+            query->evaluate(*document().window());
+            if (query->matches()) {
+                matches = true;
+                break;
+            }
+        }
+        if (!matches)
+            return false;
+    }
+
+    // - FIXME: el's style sheet was enabled when the element was created by the parser.
+
+    // - FIXME: The last time the event loop reached step 1, el's root was that Document.
+
+    // - FIXME: The user agent hasn't given up on loading that particular style sheet yet.
+    //   A user agent may give up on loading a style sheet at any time.
+
+    return true;
 }
 
 }

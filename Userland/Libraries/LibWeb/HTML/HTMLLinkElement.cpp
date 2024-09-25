@@ -470,9 +470,14 @@ void HTMLLinkElement::process_stylesheet_resource(bool success, Fetch::Infrastru
         dispatch_event(*DOM::Event::create(realm(), HTML::EventNames::error));
     }
 
-    // FIXME: 6. If el contributes a script-blocking style sheet, then:
-    //     FIXME: 1. Assert: el's node document's script-blocking style sheet counter is greater than 0.
-    //     FIXME: 2. Decrement el's node document's script-blocking style sheet counter by 1.
+    // 6. If el contributes a script-blocking style sheet, then:
+    if (contributes_a_script_blocking_style_sheet()) {
+        // 1. Assert: el's node document's script-blocking style sheet set contains el.
+        VERIFY(document().script_blocking_style_sheet_set().contains(*this));
+
+        // 2. Remove el from its node document's script-blocking style sheet set.
+        document().script_blocking_style_sheet_set().remove(*this);
+    }
 
     // 7. Unblock rendering on el.
     m_document_load_event_delayer.clear();
@@ -500,7 +505,11 @@ bool HTMLLinkElement::stylesheet_linked_resource_fetch_setup_steps(Fetch::Infras
     // 1. If el's disabled attribute is set, then return false.
     if (has_attribute(AttributeNames::disabled))
         return false;
-    // FIXME: 2. If el contributes a script-blocking style sheet, increment el's node document's script-blocking style sheet counter by 1.
+
+    // 2. If el contributes a script-blocking style sheet, append el to its node document's script-blocking style sheet set.
+    if (contributes_a_script_blocking_style_sheet()) {
+        document().script_blocking_style_sheet_set().set(*this);
+    }
 
     // 3. If el's media attribute's value matches the environment and el is potentially render-blocking, then block rendering on el.
     // FIXME: Check media attribute value.
@@ -616,6 +625,14 @@ void HTMLLinkElement::visit_edges(Cell::Visitor& visitor)
     visitor.visit(m_fetch_controller);
     visitor.visit(m_loaded_style_sheet);
     visitor.visit(m_rel_list);
+}
+
+bool HTMLLinkElement::contributes_to_the_styling_processing_model() const
+{
+    // NOTE: This is only mentioned here, in vague terms:
+    // https://html.spec.whatwg.org/multipage/semantics.html#interactions-of-styling-and-scripting:link-type-stylesheet
+    // For now, I'm interpreting that as meaning it's a stylesheet link. This may or may not be accurate.
+    return m_relationship & Relationship::Stylesheet;
 }
 
 }

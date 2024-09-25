@@ -41,6 +41,8 @@ public:
     bool has_loaded_icon() const;
     bool load_favicon_and_use_if_window_is_active();
 
+    bool contributes_to_the_styling_processing_model() const;
+
     static WebIDL::ExceptionOr<void> load_fallback_favicon_if_needed(JS::NonnullGCPtr<DOM::Document>);
 
 private:
