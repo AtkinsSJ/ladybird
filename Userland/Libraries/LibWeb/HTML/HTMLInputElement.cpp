@@ -13,7 +13,9 @@
 #include <LibJS/Runtime/Date.h>
 #include <LibJS/Runtime/NativeFunction.h>
 #include <LibWeb/Bindings/HTMLInputElementPrototype.h>
+#include <LibWeb/CSS/Parser/Parser.h>
 #include <LibWeb/CSS/StyleValues/CSSKeywordValue.h>
+#include <LibWeb/CSS/StyleValues/CSSRGB.h>
 #include <LibWeb/CSS/StyleValues/DisplayStyleValue.h>
 #include <LibWeb/CSS/StyleValues/LengthStyleValue.h>
 #include <LibWeb/DOM/Document.h>
@@ -964,6 +966,58 @@ void HTMLInputElement::create_color_input_shadow_tree()
     set_shadow_root(shadow_root);
 }
 
+// https://html.spec.whatwg.org/multipage/input.html#update-a-color-well-control-color
+void HTMLInputElement::update_a_color_well_control_color()
+{
+    // 1. Assert: element is an input element whose type attribute is in the Color state.
+    VERIFY(m_type == TypeAttributeState::Color);
+
+    // 2. Let color be the result of parsing element's value.
+    auto color = parse_a_css_color_value(CSS::Parser::ParsingContext { realm() }, value(), *this);
+
+    // 3. If color is failure, then set color to opaque black.
+    if (!color)
+        color = CSS::CSSRGB::create_from_color(Color::Black);
+
+    // 4. Set element's value to the result of serializing a color well control color given element and color.
+    set_value(serialize_a_color_well_control_color(color));
+}
+
+// https://html.spec.whatwg.org/multipage/input.html#serialize-a-color-well-control-color
+void HTMLInputElement::serialize_a_color_well_control_color(CSS::CSSColorValue const& color)
+{
+    // 1. Assert: element is an input element whose type attribute is in the Color state.
+    VERIFY(m_type == TypeAttributeState::Color);
+
+    // 2. Let htmlCompatible be false.
+    auto html_compatible = false;
+
+    // 3. If element's alpha attribute is not specified, then set color's alpha component to be fully opaque.
+    if (!has_attribute(HTML::AttributeNames::alpha))
+        color.set_alpha(0xFF);
+
+    // 4. FIXME: If element's colorspace attribute is in the Limited sRGB state:
+    if (false) {
+        // 1. FIXME: Set color to color converted to the 'srgb' color space.
+
+        // 2. FIXME: Round each of color's components so they are in the range 0 to 255, inclusive. Components are to be rounded towards +∞ .
+
+        // 3. FIXME: If element's alpha attribute is not specified, then set htmlCompatible to true.
+
+        // 4. FIXME: Otherwise, set color to color converted to using the 'color()' function.
+    }
+
+    // 5. Otherwise:
+    else {
+        // 1. FIXME: Assert: element's colorspace attribute is in the Display P3 state.
+
+        // 2. FIXME: Set color to color converted to the 'display-p3' color space.
+    }
+
+    // 6. Return the result of serializing color. If htmlCompatible is true, then do so with HTML-compatible serialization requested.
+    return color.to_string();
+}
+
 void HTMLInputElement::update_color_well_element()
 {
     if (!m_color_well_element)
@@ -1510,11 +1564,8 @@ String HTMLInputElement::value_sanitization_algorithm(String const& value) const
         }
     } else if (type_state() == HTMLInputElement::TypeAttributeState::Color) {
         // https://html.spec.whatwg.org/multipage/input.html#color-state-(type=color):value-sanitization-algorithm
-        // If the value of the element is a valid simple color, then set it to the value of the element converted to ASCII lowercase;
-        if (is_valid_simple_color(value))
-            return value.to_ascii_lowercase();
-        // otherwise, set it to the string "#000000".
-        return "#000000"_string;
+        // The value sanitization algorithm is as follows: Run update a color well control color for the element.
+        update_a_color_well_control_color();
     }
     return value;
 }

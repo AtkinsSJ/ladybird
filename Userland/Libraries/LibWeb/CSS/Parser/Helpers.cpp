@@ -12,6 +12,7 @@
 #include <LibWeb/CSS/CSSRuleList.h>
 #include <LibWeb/CSS/CSSStyleSheet.h>
 #include <LibWeb/CSS/Parser/Parser.h>
+#include <LibWeb/CSS/StyleValues/CSSRGB.h>
 
 namespace Web {
 
@@ -81,6 +82,32 @@ Optional<CSS::StyleProperty> parse_css_supports_condition(CSS::Parser::ParsingCo
     if (string.is_empty())
         return {};
     return CSS::Parser::Parser::create(context, string).parse_as_supports_condition();
+}
+
+// https://drafts.csswg.org/css-color/#parse-color
+RefPtr<CSS::CSSColorValue> parse_a_css_color_value(CSS::Parser::ParsingContext const& context, StringView input, Optional<DOM::Element&> element)
+{
+    // 1. Parse input as a <color>. If the result is failure, return failure; otherwise, let color be the result.
+    auto color = CSS::Parser::Parser::create(context, input).parse_as_css_value(CSS::PropertyID::Color);
+    if (!color)
+        return {};
+
+    // 2. Let used color be the result of resolving color to a used color.
+    //    If the value of other properties on the element a <color> is on is required to do the resolution (such as resolving a currentcolor or system color),
+    //    use element if it was passed, or the initial values of the properties if not.
+    RefPtr<CSS::CSSColorValue> used_color;
+    if (color->is_color()) {
+        // FIXME: We should resolve things like calc(), var(), and attr() here.
+        used_color = color->as_color();
+    } else if (color->is_keyword()) {
+        auto layout_node = element.has_value() ? element->layout_node() : OptionalNone {};
+        used_color = CSS::CSSRGB::create_from_color(color->to_color(layout_node));
+    } else {
+        dbgln("Unsupported type parsed in parse_a_css_color_value(): {}", color->to_string());
+    }
+
+    // 3. Return used color.
+    return used_color;
 }
 
 }

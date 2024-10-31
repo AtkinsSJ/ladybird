@@ -306,6 +306,8 @@ private:
     JS::GCPtr<DOM::Text> m_text_node;
     bool m_checked { false };
 
+    void update_a_color_well_control_color();
+    void serialize_a_color_well_control_color(CSS::CSSColorValue const&);
     void update_color_well_element();
     JS::GCPtr<DOM::Element> m_color_well_element;
 
