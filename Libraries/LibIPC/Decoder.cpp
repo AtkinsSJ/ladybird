@@ -100,11 +100,22 @@ ErrorOr<URL::URL> decode(Decoder& decoder)
 template<>
 ErrorOr<URL::Origin> decode(Decoder& decoder)
 {
-    auto scheme = TRY(decoder.decode<ByteString>());
+    auto is_opaque = TRY(decoder.decode<bool>());
+    if (is_opaque)
+        return URL::Origin {};
+
+    auto scheme = TRY(decoder.decode<Optional<String>>());
     auto host = TRY(decoder.decode<URL::Host>());
     auto port = TRY(decoder.decode<Optional<u16>>());
 
     return URL::Origin { move(scheme), move(host), port };
+}
+
+template<>
+ErrorOr<URL::Host> decode(Decoder& decoder)
+{
+    auto value = TRY(decoder.decode<URL::Host::VariantType>());
+    return URL::Host { move(value) };
 }
 
 template<>

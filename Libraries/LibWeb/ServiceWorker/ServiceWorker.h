@@ -6,22 +6,40 @@
 
 #pragma once
 
-#include <LibURL/URL.h>
 #include <LibWeb/Bindings/ServiceWorkerPrototype.h>
-#include <LibWeb/Bindings/WorkerPrototype.h>
+#include <LibWeb/DOM/EventTarget.h>
+
+#define ENUMERATE_SERVICE_WORKER_EVENT_HANDLERS(E)  \
+    E(onstatechange, HTML::EventNames::statechange) \
+    E(onerror, HTML::EventNames::error)
 
 namespace Web::ServiceWorker {
 
-// https://w3c.github.io/ServiceWorker/#dfn-service-worker
-// This class corresponds to "service worker", not "ServiceWorker"
-// FIXME: This should be owned and managed at the user agent level
-// FIXME: A lot of the fields for this struct actually need to live in the Agent for the service worker in the WebWorker process
-struct ServiceWorker {
-    Bindings::ServiceWorkerState state = Bindings::ServiceWorkerState::Parsed; // https://w3c.github.io/ServiceWorker/#dfn-state
-    URL::URL script_url;                                                       // https://w3c.github.io/ServiceWorker/#dfn-script-url
-    Bindings::WorkerType worker_type = Bindings::WorkerType::Classic;          // https://w3c.github.io/ServiceWorker/#dfn-type
+class ServiceWorker : public DOM::EventTarget {
+    WEB_PLATFORM_OBJECT(ServiceWorker, DOM::EventTarget);
 
-    // FIXME: A lot more fields after this...
+public:
+    [[nodiscard]] static GC::Ref<ServiceWorker> create(JS::Realm& realm);
+
+    virtual ~ServiceWorker() override;
+
+    String script_url() const { return m_script_url; }
+    Bindings::ServiceWorkerState service_worker_state() const { return m_state; }
+
+#undef __ENUMERATE
+#define __ENUMERATE(attribute_name, event_name)       \
+    void set_##attribute_name(WebIDL::CallbackType*); \
+    WebIDL::CallbackType* attribute_name();
+    ENUMERATE_SERVICE_WORKER_EVENT_HANDLERS(__ENUMERATE)
+#undef __ENUMERATE
+
+private:
+    ServiceWorker(JS::Realm&, String script_url);
+
+    virtual void initialize(JS::Realm&) override;
+
+    String m_script_url;
+    Bindings::ServiceWorkerState m_state { Bindings::ServiceWorkerState::Parsed };
 };
 
 }

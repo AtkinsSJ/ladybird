@@ -295,7 +295,6 @@ void DisplayListRecorder::push_stacking_context(PushStackingContextParams params
 {
     append(PushStackingContext {
         .opacity = params.opacity,
-        .filter = params.filter,
         .source_paintable_rect = params.source_paintable_rect,
         .transform = {
             .origin = params.transform.origin,
@@ -344,7 +343,7 @@ void DisplayListRecorder::paint_text_shadow(int blur_radius, Gfx::IntRect boundi
         .color = color });
 }
 
-void DisplayListRecorder::fill_rect_with_rounded_corners(Gfx::IntRect const& rect, Color color, Gfx::CornerRadius top_left_radius, Gfx::CornerRadius top_right_radius, Gfx::CornerRadius bottom_right_radius, Gfx::CornerRadius bottom_left_radius)
+void DisplayListRecorder::fill_rect_with_rounded_corners(Gfx::IntRect const& rect, Color color, CornerRadius top_left_radius, CornerRadius top_right_radius, CornerRadius bottom_right_radius, CornerRadius bottom_left_radius)
 {
     if (rect.is_empty())
         return;
@@ -406,6 +405,11 @@ void DisplayListRecorder::paint_scrollbar(int scroll_frame_id, Gfx::IntRect rect
 void DisplayListRecorder::apply_opacity(float opacity)
 {
     append(ApplyOpacity { .opacity = opacity });
+}
+
+void DisplayListRecorder::apply_filters(CSS::ResolvedFilter filter)
+{
+    append(ApplyFilters { .filter = filter });
 }
 
 void DisplayListRecorder::apply_transform(Gfx::FloatPoint origin, Gfx::FloatMatrix4x4 matrix)

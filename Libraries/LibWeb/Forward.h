@@ -205,6 +205,7 @@ class Resolution;
 class ResolutionOrCalculated;
 class ResolutionStyleValue;
 class RotationStyleValue;
+class ScaleStyleValue;
 class Screen;
 class ScreenOrientation;
 class ScrollbarGutterStyleValue;
@@ -227,6 +228,7 @@ class TimeStyleValue;
 class Transformation;
 class TransformationStyleValue;
 class TransitionStyleValue;
+class TranslationStyleValue;
 class UnresolvedStyleValue;
 class URLStyleValue;
 class VisualViewport;
@@ -514,8 +516,6 @@ class PluginArray;
 class PromiseRejectionEvent;
 class RadioNodeList;
 class SelectedFile;
-class ServiceWorkerContainer;
-class ServiceWorkerRegistration;
 class SessionHistoryEntry;
 class SharedResourceRequest;
 class Storage;
@@ -572,10 +572,15 @@ class Performance;
 
 namespace Web::IndexedDB {
 class Database;
-class IDBFactory;
+class IDBCursor;
 class IDBDatabase;
+class IDBFactory;
+class IDBIndex;
+class IDBKeyRange;
+class IDBObjectStore;
 class IDBOpenDBRequest;
 class IDBRequest;
+class IDBTransaction;
 class IDBVersionChangeEvent;
 }
 
@@ -658,6 +663,7 @@ namespace Web::Painting {
 class AudioPaintable;
 class ButtonPaintable;
 class CheckBoxPaintable;
+class FieldSetPaintable;
 class LabelablePaintable;
 class MediaPaintable;
 class Paintable;
@@ -706,6 +712,12 @@ class ResizeObserver;
 
 namespace Web::Selection {
 class Selection;
+}
+
+namespace Web::ServiceWorker {
+class ServiceWorker;
+class ServiceWorkerContainer;
+class ServiceWorkerRegistration;
 }
 
 namespace Web::Streams {

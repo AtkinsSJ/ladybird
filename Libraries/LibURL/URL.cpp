@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2018-2020, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021, Max Wipfli <mail@maxwipfli.ch>
+ * Copyright (c) 2024, Sam Atkins <sam@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -13,6 +14,10 @@
 #include <AK/Utf8View.h>
 #include <LibURL/Parser.h>
 #include <LibURL/URL.h>
+
+#if defined(ENABLE_PUBLIC_SUFFIX)
+#    include <LibURL/PublicSuffixData.h>
+#endif
 
 namespace URL {
 
@@ -81,9 +86,9 @@ void URL::set_host(Host host)
 }
 
 // https://url.spec.whatwg.org/#concept-host-serializer
-ErrorOr<String> URL::serialized_host() const
+String URL::serialized_host() const
 {
-    return Parser::serialize_host(m_data->host);
+    return m_data->host->serialize();
 }
 
 void URL::set_port(Optional<u16> port)
@@ -114,7 +119,8 @@ void URL::append_path(StringView path)
 bool URL::cannot_have_a_username_or_password_or_port() const
 {
     // A URL cannot have a username/password/port if its host is null or the empty string, or its scheme is "file".
-    return m_data->host.has<Empty>() || m_data->host == String {} || m_data->scheme == "file"sv;
+
+    return !m_data->host.has_value() || m_data->host->is_empty_host() || m_data->scheme == "file"sv;
 }
 
 // FIXME: This is by no means complete.
@@ -137,8 +143,8 @@ bool URL::compute_validity() const
             return false;
     }
 
-    // NOTE: A file URL's host should be the empty string for localhost, not null.
-    if (m_data->scheme == "file" && m_data->host.has<Empty>())
+    // FIXME: A file URL's host should be the empty string for localhost, not null.
+    if (m_data->scheme == "file" && !m_data->host.has_value())
         return false;
 
     return true;
@@ -247,7 +253,7 @@ ByteString URL::serialize(ExcludeFragment exclude_fragment) const
     output.append(':');
 
     // 2. If url’s host is non-null:
-    if (!m_data->host.has<Empty>()) {
+    if (m_data->host.has_value()) {
         // 1. Append "//" to output.
         output.append("//"sv);
 
@@ -267,7 +273,7 @@ ByteString URL::serialize(ExcludeFragment exclude_fragment) const
         }
 
         // 3. Append url’s host, serialized, to output.
-        output.append(serialized_host().release_value_but_fixme_should_propagate_errors());
+        output.append(serialized_host());
 
         // 4. If url’s port is non-null, append U+003A (:) followed by url’s port, serialized, to output.
         if (m_data->port.has_value())
@@ -280,7 +286,7 @@ ByteString URL::serialize(ExcludeFragment exclude_fragment) const
     if (cannot_be_a_base_url()) {
         output.append(m_data->paths[0]);
     } else {
-        if (m_data->host.has<Empty>() && m_data->paths.size() > 1 && m_data->paths[0].is_empty())
+        if (!m_data->host.has_value() && m_data->paths.size() > 1 && m_data->paths[0].is_empty())
             output.append("/."sv);
         for (auto& segment : m_data->paths) {
             output.append('/');
@@ -316,9 +322,9 @@ ByteString URL::serialize_for_display() const
     builder.append(m_data->scheme);
     builder.append(':');
 
-    if (!m_data->host.has<Empty>()) {
+    if (m_data->host.has_value()) {
         builder.append("//"sv);
-        builder.append(serialized_host().release_value_but_fixme_should_propagate_errors());
+        builder.append(serialized_host());
         if (m_data->port.has_value())
             builder.appendff(":{}", *m_data->port);
     }
@@ -326,7 +332,7 @@ ByteString URL::serialize_for_display() const
     if (cannot_be_a_base_url()) {
         builder.append(m_data->paths[0]);
     } else {
-        if (m_data->host.has<Empty>() && m_data->paths.size() > 1 && m_data->paths[0].is_empty())
+        if (!m_data->host.has_value() && m_data->paths.size() > 1 && m_data->paths[0].is_empty())
             builder.append("/."sv);
         for (auto& segment : m_data->paths) {
             builder.append('/');
@@ -386,7 +392,7 @@ Origin URL::origin() const
     // -> "wss"
     if (scheme().is_one_of("ftp"sv, "http"sv, "https"sv, "ws"sv, "wss"sv)) {
         // Return the tuple origin (url’s scheme, url’s host, url’s port, null).
-        return Origin(scheme().to_byte_string(), host(), port());
+        return Origin(scheme(), host().value(), port());
     }
 
     // -> "file"
@@ -394,7 +400,7 @@ Origin URL::origin() const
     if (scheme() == "file"sv || scheme() == "resource"sv) {
         // Unfortunate as it is, this is left as an exercise to the reader. When in doubt, return a new opaque origin.
         // Note: We must return an origin with the `file://' protocol for `file://' iframes to work from `file://' pages.
-        return Origin(scheme().to_byte_string(), String {}, {});
+        return Origin(scheme(), String {}, {});
     }
 
     // -> Otherwise
@@ -496,6 +502,24 @@ ByteString percent_decode(StringView input)
         }
     }
     return builder.to_byte_string();
+}
+
+bool is_public_suffix([[maybe_unused]] StringView host)
+{
+#if defined(ENABLE_PUBLIC_SUFFIX)
+    return PublicSuffixData::the()->is_public_suffix(host);
+#else
+    return false;
+#endif
+}
+
+Optional<String> get_public_suffix([[maybe_unused]] StringView host)
+{
+#if defined(ENABLE_PUBLIC_SUFFIX)
+    return MUST(PublicSuffixData::the()->get_public_suffix(host));
+#else
+    return {};
+#endif
 }
 
 }

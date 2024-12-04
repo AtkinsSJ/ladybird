@@ -188,11 +188,9 @@ void HTMLParser::visit_edges(Cell::Visitor& visitor)
 
 void HTMLParser::run(HTMLTokenizer::StopAtInsertionPoint stop_at_insertion_point)
 {
-    for (;;) {
-        // FIXME: Find a better way to say that we come from Document::close() and want to process EOF.
-        if (!m_tokenizer.is_eof_inserted() && m_tokenizer.is_insertion_point_reached())
-            break;
+    m_stop_parsing = false;
 
+    for (;;) {
         auto optional_token = m_tokenizer.next_token(stop_at_insertion_point);
         if (!optional_token.has_value())
             break;
@@ -519,25 +517,51 @@ DOM::QuirksMode HTMLParser::which_quirks_mode(HTMLToken const& doctype_token) co
     return DOM::QuirksMode::No;
 }
 
+// https://html.spec.whatwg.org/multipage/parsing.html#the-initial-insertion-mode
 void HTMLParser::handle_initial(HTMLToken& token)
 {
+    // -> A character token that is one of U+0009 CHARACTER TABULATION, U+000A LINE FEED (LF),
+    //    U+000C FORM FEED (FF), U+000D CARRIAGE RETURN (CR), or U+0020 SPACE
     if (token.is_character() && token.is_parser_whitespace()) {
         return;
     }
 
+    // -> A comment token
     if (token.is_comment()) {
+        // Insert a comment as the last child of the Document object.
         auto comment = realm().create<DOM::Comment>(document(), token.comment());
         MUST(document().append_child(*comment));
         return;
     }
 
+    // -> A DOCTYPE token
     if (token.is_doctype()) {
+        // If the DOCTYPE token's name is not "html", or the token's public identifier is not missing,
+        // or the token's system identifier is neither missing nor "about:legacy-compat", then there is a parse error.
+        if (token.doctype_data().name != "html" || !token.doctype_data().missing_public_identifier || (!token.doctype_data().missing_system_identifier && token.doctype_data().system_identifier != "about:legacy-compat")) {
+            log_parse_error();
+        }
+
+        // Append a DocumentType node to the Document node, with its name set to the name given in the DOCTYPE token,
+        // or the empty string if the name was missing; its public ID set to the public identifier given in the DOCTYPE token,
+        // or the empty string if the public identifier was missing; and its system ID set to the system identifier
+        // given in the DOCTYPE token, or the empty string if the system identifier was missing.
+
         auto doctype = realm().create<DOM::DocumentType>(document());
         doctype->set_name(token.doctype_data().name);
         doctype->set_public_id(token.doctype_data().public_identifier);
         doctype->set_system_id(token.doctype_data().system_identifier);
         MUST(document().append_child(*doctype));
+
+        // Then, if the document is not an iframe srcdoc document, and the parser cannot change the mode flag is false,
+        // and the DOCTYPE token matches one of the conditions in the following list, then set the Document to quirks mode:
+        // [...]
+        // Otherwise, if the document is not an iframe srcdoc document, and the parser cannot change the mode flag is false,
+        // and the DOCTYPE token matches one of the conditions in the following list, then set the Document to limited-quirks mode:
+        // [...]
         document().set_quirks_mode(which_quirks_mode(token));
+
+        // Then, switch the insertion mode to "before html".
         m_insertion_mode = InsertionMode::BeforeHTML;
         return;
     }
@@ -1678,6 +1702,7 @@ bool HTMLParser::is_special_tag(FlyString const& tag_name, Optional<FlyString> c
             HTML::TagNames::plaintext,
             HTML::TagNames::pre,
             HTML::TagNames::script,
+            HTML::TagNames::search,
             HTML::TagNames::section,
             HTML::TagNames::select,
             HTML::TagNames::source,
@@ -2267,7 +2292,7 @@ void HTMLParser::handle_in_body(HTMLToken& token)
         return;
     }
 
-    // 3. An end tag whose tag name is one of: "h1", "h2", "h3", "h4", "h5", "h6"
+    // -> An end tag whose tag name is one of: "h1", "h2", "h3", "h4", "h5", "h6"
     if (token.is_end_tag() && token.tag_name().is_one_of(HTML::TagNames::h1, HTML::TagNames::h2, HTML::TagNames::h3, HTML::TagNames::h4, HTML::TagNames::h5, HTML::TagNames::h6)) {
         // If the stack of open elements does not have an element in scope that is an HTML element and whose tag name is one of "h1", "h2", "h3", "h4", "h5", or "h6", then this is a parse error; ignore the token.
         if (!m_stack_of_open_elements.has_in_scope(HTML::TagNames::h1)
@@ -2296,6 +2321,12 @@ void HTMLParser::handle_in_body(HTMLToken& token)
                 break;
         }
         return;
+    }
+
+    // -> An end tag whose tag name is "sarcasm"
+    if (token.is_end_tag() && token.tag_name().is_one_of("sarcasm"_fly_string)) {
+        // Take a deep breath, then act as described in the "any other end tag" entry below.
+        goto AnyOtherEndTag;
     }
 
     // -> A start tag whose tag name is "a"
@@ -2436,8 +2467,6 @@ void HTMLParser::handle_in_body(HTMLToken& token)
 
         // Insert an HTML element for the token. Immediately pop the current node off the stack of open elements.
         (void)insert_html_element(token);
-
-        // Acknowledge the token's self-closing flag, if it is set.
         (void)m_stack_of_open_elements.pop();
 
         // Acknowledge the token's self-closing flag, if it is set.

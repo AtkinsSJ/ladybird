@@ -12,7 +12,6 @@
 #include <LibWeb/Bindings/SyntheticHostDefined.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/Fetch/Infrastructure/FetchRecord.h>
-#include <LibWeb/HTML/PromiseRejectionEvent.h>
 #include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/Scripting/ExceptionReporter.h>
 #include <LibWeb/HTML/Scripting/WindowEnvironmentSettingsObject.h>
@@ -360,19 +359,19 @@ JS::Realm& current_principal_realm()
 }
 
 // https://whatpr.org/html/9893/webappapis.html#concept-principal-realm-of-realm
-JS::Realm& principal_realm(JS::Realm& realm)
+JS::Realm& principal_realm(GC::Ref<JS::Realm> realm)
 {
-    VERIFY(realm.host_defined());
+    VERIFY(realm->host_defined());
 
     // 1. If realm.[[HostDefined]] is a synthetic realm settings object, then:
-    if (is<Bindings::SyntheticHostDefined>(*realm.host_defined())) {
+    if (is<Bindings::SyntheticHostDefined>(*realm->host_defined())) {
         // 1. Assert: realm is a synthetic realm.
         // 2. Set realm to the principal realm of realm.[[HostDefined]].
-        return static_cast<Bindings::SyntheticHostDefined const&>(*realm.host_defined()).synthetic_realm_settings.principal_realm;
+        realm = static_cast<Bindings::SyntheticHostDefined const&>(*realm->host_defined()).synthetic_realm_settings.principal_realm;
     }
 
     // 2. Assert: realm.[[HostDefined]] is an environment settings object and realm is a principal realm.
-    VERIFY(is<Bindings::PrincipalHostDefined>(*realm.host_defined()));
+    VERIFY(is<Bindings::PrincipalHostDefined>(*realm->host_defined()));
 
     // 3. Return realm.
     return realm;
@@ -408,6 +407,13 @@ JS::Realm& relevant_realm(JS::Object const& object)
     return object.shape().realm();
 }
 
+// https://whatpr.org/html/9893/webappapis.html#relevant-principal-realm
+JS::Realm& relevant_principal_realm(JS::Object const& object)
+{
+    // The relevant principal realm for a platform object o is o's relevant realm's principal realm.
+    return principal_realm(relevant_realm(object));
+}
+
 // https://html.spec.whatwg.org/multipage/webappapis.html#relevant-settings-object
 EnvironmentSettingsObject& relevant_settings_object(JS::Object const& object)
 {
@@ -421,11 +427,25 @@ EnvironmentSettingsObject& relevant_settings_object(DOM::Node const& node)
     return const_cast<DOM::Document&>(node.document()).relevant_settings_object();
 }
 
+// https://whatpr.org/html/9893/webappapis.html#relevant-principal-settings-object
+EnvironmentSettingsObject& relevant_principal_settings_object(JS::Object const& object)
+{
+    // The relevant principal settings object for a platform object o is o's relevant principal realm's environment settings object.
+    return Bindings::principal_host_defined_environment_settings_object(relevant_principal_realm(object));
+}
+
 // https://html.spec.whatwg.org/multipage/webappapis.html#concept-relevant-global
 JS::Object& relevant_global_object(JS::Object const& object)
 {
     // Similarly, the relevant global object for a platform object o is the global object of the relevant Realm for o.
     return relevant_realm(object).global_object();
+}
+
+// https://whatpr.org/html/9893/webappapis.html#relevant-principal-global
+JS::Object& relevant_principal_global_object(JS::Object const& object)
+{
+    // The relevant principal global object for a platform object o is o's relevant principal realm's global object.
+    return relevant_principal_realm(object).global_object();
 }
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#concept-entry-realm

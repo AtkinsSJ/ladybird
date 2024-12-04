@@ -47,6 +47,7 @@
 #include <LibWeb/MimeSniff/Resource.h>
 #include <LibWeb/Namespace.h>
 #include <LibWeb/Page/Page.h>
+#include <LibWeb/Painting/PaintableBox.h>
 #include <LibWeb/Selection/Selection.h>
 #include <LibWeb/UIEvents/EventNames.h>
 #include <LibWeb/UIEvents/MouseEvent.h>
@@ -638,6 +639,7 @@ void HTMLInputElement::commit_pending_changes()
     case TypeAttributeState::Text:
     case TypeAttributeState::URL:
     case TypeAttributeState::Checkbox:
+    case TypeAttributeState::RadioButton:
         if (!m_has_uncommitted_changes)
             return;
         break;
@@ -1609,7 +1611,7 @@ void HTMLInputElement::apply_presentational_hints(CSS::StyleProperties& style) c
             else if (value.equals_ignoring_ascii_case("middle"sv))
                 style.set_property(CSS::PropertyID::TextAlign, CSS::CSSKeywordValue::create(CSS::Keyword::Middle));
         } else if (name == HTML::AttributeNames::border) {
-            if (auto parsed_value = parse_non_negative_integer(value); parsed_value.has_value() && *parsed_value > 0) {
+            if (auto parsed_value = parse_non_negative_integer(value); parsed_value.has_value()) {
                 auto width_style_value = CSS::LengthStyleValue::create(CSS::Length::make_px(*parsed_value));
                 style.set_property(CSS::PropertyID::BorderTopWidth, width_style_value);
                 style.set_property(CSS::PropertyID::BorderRightWidth, width_style_value);
@@ -1830,7 +1832,7 @@ WebIDL::Long HTMLInputElement::max_length() const
 {
     // The maxLength IDL attribute must reflect the maxlength content attribute, limited to only non-negative numbers.
     if (auto maxlength_string = get_attribute(HTML::AttributeNames::maxlength); maxlength_string.has_value()) {
-        if (auto maxlength = parse_non_negative_integer(*maxlength_string); maxlength.has_value())
+        if (auto maxlength = parse_non_negative_integer(*maxlength_string); maxlength.has_value() && *maxlength <= 2147483647)
             return *maxlength;
     }
     return -1;
@@ -1847,7 +1849,7 @@ WebIDL::Long HTMLInputElement::min_length() const
 {
     // The minLength IDL attribute must reflect the minlength content attribute, limited to only non-negative numbers.
     if (auto minlength_string = get_attribute(HTML::AttributeNames::minlength); minlength_string.has_value()) {
-        if (auto minlength = parse_non_negative_integer(*minlength_string); minlength.has_value())
+        if (auto minlength = parse_non_negative_integer(*minlength_string); minlength.has_value() && *minlength <= 2147483647)
             return *minlength;
     }
     return -1;
@@ -1860,19 +1862,94 @@ WebIDL::ExceptionOr<void> HTMLInputElement::set_min_length(WebIDL::Long value)
 }
 
 // https://html.spec.whatwg.org/multipage/input.html#the-size-attribute
-unsigned HTMLInputElement::size() const
+WebIDL::UnsignedLong HTMLInputElement::size() const
 {
+    // The size attribute, if specified, must have a value that is a valid non-negative integer greater than zero.
     // The size IDL attribute is limited to only positive numbers and has a default value of 20.
     if (auto size_string = get_attribute(HTML::AttributeNames::size); size_string.has_value()) {
-        if (auto size = parse_non_negative_integer(*size_string); size.has_value())
+        if (auto size = parse_non_negative_integer(*size_string); size.has_value() && *size != 0 && *size <= 2147483647)
             return *size;
     }
     return 20;
 }
 
-WebIDL::ExceptionOr<void> HTMLInputElement::set_size(unsigned value)
+WebIDL::ExceptionOr<void> HTMLInputElement::set_size(WebIDL::UnsignedLong value)
 {
+    if (value == 0)
+        return WebIDL::IndexSizeError::create(realm(), "Size must be greater than zero"_string);
+    if (value > 2147483647)
+        value = 20;
     return set_attribute(HTML::AttributeNames::size, String::number(value));
+}
+
+// https://html.spec.whatwg.org/multipage/input.html#dom-input-height
+WebIDL::UnsignedLong HTMLInputElement::height() const
+{
+    const_cast<DOM::Document&>(document()).update_layout();
+
+    // When the input element's type attribute is not in the Image Button state, then no image is available.
+    if (type_state() != TypeAttributeState::ImageButton)
+        return 0;
+
+    // Return the rendered height of the image, in CSS pixels, if the image is being rendered.
+    if (auto* paintable_box = this->paintable_box())
+        return paintable_box->content_height().to_int();
+
+    // On setting [the width or height IDL attribute], they must act as if they reflected the respective content attributes of the same name.
+    if (auto height_string = get_attribute(HTML::AttributeNames::height); height_string.has_value()) {
+        if (auto height = parse_non_negative_integer(*height_string); height.has_value() && *height <= 2147483647)
+            return *height;
+    }
+
+    // ...or else the natural height and height of the image, in CSS pixels, if an image is available but not being rendered
+    if (auto bitmap = current_image_bitmap())
+        return bitmap->height();
+
+    // ...or else 0, if the image is not available or does not have intrinsic dimensions.
+    return 0;
+}
+
+WebIDL::ExceptionOr<void> HTMLInputElement::set_height(WebIDL::UnsignedLong value)
+{
+    if (value > 2147483647)
+        value = 0;
+
+    return set_attribute(HTML::AttributeNames::height, String::number(value));
+}
+
+// https://html.spec.whatwg.org/multipage/input.html#dom-input-width
+WebIDL::UnsignedLong HTMLInputElement::width() const
+{
+    const_cast<DOM::Document&>(document()).update_layout();
+
+    // When the input element's type attribute is not in the Image Button state, then no image is available.
+    if (type_state() != TypeAttributeState::ImageButton)
+        return 0;
+
+    // Return the rendered width of the image, in CSS pixels, if the image is being rendered.
+    if (auto* paintable_box = this->paintable_box())
+        return paintable_box->content_width().to_int();
+
+    // On setting [the width or height IDL attribute], they must act as if they reflected the respective content attributes of the same name.
+    if (auto width_string = get_attribute(HTML::AttributeNames::width); width_string.has_value()) {
+        if (auto width = parse_non_negative_integer(*width_string); width.has_value() && *width <= 2147483647)
+            return *width;
+    }
+
+    // ...or else the natural width and height of the image, in CSS pixels, if an image is available but not being rendered
+    if (auto bitmap = current_image_bitmap())
+        return bitmap->width();
+
+    // ...or else 0, if the image is not available or does not have intrinsic dimensions.
+    return 0;
+}
+
+WebIDL::ExceptionOr<void> HTMLInputElement::set_width(WebIDL::UnsignedLong value)
+{
+    if (value > 2147483647)
+        value = 0;
+
+    return set_attribute(HTML::AttributeNames::width, String::number(value));
 }
 
 // https://html.spec.whatwg.org/multipage/input.html#concept-input-value-string-number

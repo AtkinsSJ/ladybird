@@ -259,7 +259,7 @@ WebIDL::Long HTMLTextAreaElement::max_length() const
 {
     // The maxLength IDL attribute must reflect the maxlength content attribute, limited to only non-negative numbers.
     if (auto maxlength_string = get_attribute(HTML::AttributeNames::maxlength); maxlength_string.has_value()) {
-        if (auto maxlength = parse_non_negative_integer(*maxlength_string); maxlength.has_value())
+        if (auto maxlength = parse_non_negative_integer(*maxlength_string); maxlength.has_value() && *maxlength <= 2147483647)
             return *maxlength;
     }
     return -1;
@@ -276,7 +276,7 @@ WebIDL::Long HTMLTextAreaElement::min_length() const
 {
     // The minLength IDL attribute must reflect the minlength content attribute, limited to only non-negative numbers.
     if (auto minlength_string = get_attribute(HTML::AttributeNames::minlength); minlength_string.has_value()) {
-        if (auto minlength = parse_non_negative_integer(*minlength_string); minlength.has_value())
+        if (auto minlength = parse_non_negative_integer(*minlength_string); minlength.has_value() && *minlength <= 2147483647)
             return *minlength;
     }
     return -1;
@@ -293,30 +293,36 @@ unsigned HTMLTextAreaElement::cols() const
 {
     // The cols and rows attributes are limited to only positive numbers with fallback. The cols IDL attribute's default value is 20.
     if (auto cols_string = get_attribute(HTML::AttributeNames::cols); cols_string.has_value()) {
-        if (auto cols = parse_non_negative_integer(*cols_string); cols.has_value() && *cols > 0)
+        if (auto cols = parse_non_negative_integer(*cols_string); cols.has_value() && *cols > 0 && *cols <= 2147483647)
             return *cols;
     }
     return 20;
 }
 
-WebIDL::ExceptionOr<void> HTMLTextAreaElement::set_cols(unsigned cols)
+WebIDL::ExceptionOr<void> HTMLTextAreaElement::set_cols(WebIDL::UnsignedLong cols)
 {
+    if (cols == 0 || cols > 2147483647)
+        cols = 20;
+
     return set_attribute(HTML::AttributeNames::cols, String::number(cols));
 }
 
 // https://html.spec.whatwg.org/multipage/form-elements.html#dom-textarea-rows
-unsigned HTMLTextAreaElement::rows() const
+WebIDL::UnsignedLong HTMLTextAreaElement::rows() const
 {
     // The cols and rows attributes are limited to only positive numbers with fallback. The rows IDL attribute's default value is 2.
     if (auto rows_string = get_attribute(HTML::AttributeNames::rows); rows_string.has_value()) {
-        if (auto rows = parse_non_negative_integer(*rows_string); rows.has_value() && *rows > 0)
+        if (auto rows = parse_non_negative_integer(*rows_string); rows.has_value() && *rows > 0 && *rows <= 2147483647)
             return *rows;
     }
     return 2;
 }
 
-WebIDL::ExceptionOr<void> HTMLTextAreaElement::set_rows(unsigned rows)
+WebIDL::ExceptionOr<void> HTMLTextAreaElement::set_rows(WebIDL::UnsignedLong rows)
 {
+    if (rows == 0 || rows > 2147483647)
+        rows = 2;
+
     return set_attribute(HTML::AttributeNames::rows, String::number(rows));
 }
 

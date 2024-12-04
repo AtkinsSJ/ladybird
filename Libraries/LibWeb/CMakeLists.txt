@@ -149,11 +149,13 @@ set(SOURCES
     CSS/StyleValues/RadialGradientStyleValue.cpp
     CSS/StyleValues/RectStyleValue.cpp
     CSS/StyleValues/RotationStyleValue.cpp
+    CSS/StyleValues/ScaleStyleValue.cpp
     CSS/StyleValues/ShadowStyleValue.cpp
     CSS/StyleValues/ShorthandStyleValue.cpp
     CSS/StyleValues/StyleValueList.cpp
     CSS/StyleValues/TransformationStyleValue.cpp
     CSS/StyleValues/TransitionStyleValue.cpp
+    CSS/StyleValues/TranslationStyleValue.cpp
     CSS/StyleValues/UnresolvedStyleValue.cpp
     CSS/Supports.cpp
     CSS/SyntaxHighlighter/SyntaxHighlighter.cpp
@@ -220,6 +222,10 @@ set(SOURCES
     DOMURL/URLSearchParams.cpp
     DOMURL/URLSearchParamsIterator.cpp
     Dump.cpp
+    Editing/CommandNames.cpp
+    Editing/Commands.cpp
+    Editing/ExecCommand.cpp
+    Editing/Internal/Algorithms.cpp
     Encoding/TextDecoder.cpp
     Encoding/TextEncoder.cpp
     EntriesAPI/FileSystemEntry.cpp
@@ -461,9 +467,6 @@ set(SOURCES
     HTML/Scripting/SerializedEnvironmentSettingsObject.cpp
     HTML/SelectedFile.cpp
     HTML/SelectItem.cpp
-    HTML/ServiceWorker.cpp
-    HTML/ServiceWorkerContainer.cpp
-    HTML/ServiceWorkerRegistration.cpp
     HTML/SessionHistoryEntry.cpp
     HTML/SessionHistoryTraversalQueue.cpp
     HTML/ShadowRealmGlobalScope.cpp
@@ -500,6 +503,7 @@ set(SOURCES
     HTML/WorkerGlobalScope.cpp
     HTML/WorkerLocation.cpp
     HTML/WorkerNavigator.cpp
+    HTML/WorkletGlobalScope.cpp
     HTML/ValidityState.cpp
     HighResolutionTime/Performance.cpp
     HighResolutionTime/TimeOrigin.cpp
@@ -508,10 +512,16 @@ set(SOURCES
     Infra/Strings.cpp
     IndexedDB/Internal/Algorithms.cpp
     IndexedDB/Internal/Database.cpp
+    IndexedDB/Internal/Key.cpp
+    IndexedDB/IDBDatabase.cpp
+    IndexedDB/IDBCursor.cpp
     IndexedDB/IDBFactory.cpp
     IndexedDB/IDBOpenDBRequest.cpp
-    IndexedDB/IDBDatabase.cpp
+    IndexedDB/IDBIndex.cpp
+    IndexedDB/IDBKeyRange.cpp
+    IndexedDB/IDBObjectStore.cpp
     IndexedDB/IDBRequest.cpp
+    IndexedDB/IDBTransaction.cpp
     IndexedDB/IDBVersionChangeEvent.cpp
     Internals/Inspector.cpp
     Internals/InternalAnimationTimeline.cpp
@@ -530,7 +540,6 @@ set(SOURCES
     Layout/FieldSetBox.cpp
     Layout/FlexFormattingContext.cpp
     Layout/FormattingContext.cpp
-    Layout/FrameBox.cpp
     Layout/GridFormattingContext.cpp
     Layout/ImageBox.cpp
     Layout/ImageProvider.cpp
@@ -547,6 +556,7 @@ set(SOURCES
     Layout/LineBuilder.cpp
     Layout/ListItemBox.cpp
     Layout/ListItemMarkerBox.cpp
+    Layout/NavigableContainerViewport.cpp
     Layout/Node.cpp
     Layout/RadioButton.cpp
     Layout/ReplacedBox.cpp
@@ -611,12 +621,13 @@ set(SOURCES
     Painting/DisplayList.cpp
     Painting/DisplayListPlayerSkia.cpp
     Painting/DisplayListRecorder.cpp
+    Painting/FieldSetPaintable.cpp
     Painting/GradientPainting.cpp
     Painting/ImagePaintable.cpp
     Painting/LabelablePaintable.cpp
     Painting/MarkerPaintable.cpp
     Painting/MediaPaintable.cpp
-    Painting/NestedBrowsingContextPaintable.cpp
+    Painting/NavigableContainerViewportPaintable.cpp
     Painting/PaintContext.cpp
     Painting/Paintable.cpp
     Painting/PaintableBox.cpp
@@ -662,6 +673,10 @@ set(SOURCES
     ServiceWorker/Job.cpp
     ServiceWorker/Registration.cpp
     ServiceWorker/ServiceWorker.cpp
+    ServiceWorker/ServiceWorkerContainer.cpp
+    ServiceWorker/ServiceWorkerGlobalScope.cpp
+    ServiceWorker/ServiceWorkerRecord.cpp
+    ServiceWorker/ServiceWorkerRegistration.cpp
     SRI/SRI.cpp
     StorageAPI/NavigatorStorage.cpp
     StorageAPI/StorageKey.cpp
@@ -761,6 +776,7 @@ set(SOURCES
     WebAudio/AudioScheduledSourceNode.cpp
     WebAudio/BaseAudioContext.cpp
     WebAudio/BiquadFilterNode.cpp
+    WebAudio/ChannelMergerNode.cpp
     WebAudio/DynamicsCompressorNode.cpp
     WebAudio/GainNode.cpp
     WebAudio/OfflineAudioContext.cpp
@@ -824,12 +840,12 @@ compile_ipc(Worker/WebWorkerClient.ipc Worker/WebWorkerClientEndpoint.h)
 compile_ipc(Worker/WebWorkerServer.ipc Worker/WebWorkerServerEndpoint.h)
 
 invoke_generator(
-        "AriaRoles.cpp"
-        Lagom::GenerateAriaRoles
-        "${CMAKE_CURRENT_SOURCE_DIR}/ARIA/AriaRoles.json"
-        "ARIA/AriaRoles.h"
-        "ARIA/AriaRoles.cpp"
-        arguments -j "${CMAKE_CURRENT_SOURCE_DIR}/ARIA/AriaRoles.json"
+    "AriaRoles.cpp"
+    Lagom::GenerateAriaRoles
+    "${CMAKE_CURRENT_SOURCE_DIR}/ARIA/AriaRoles.json"
+    "ARIA/AriaRoles.h"
+    "ARIA/AriaRoles.cpp"
+    arguments -j "${CMAKE_CURRENT_SOURCE_DIR}/ARIA/AriaRoles.json"
 )
 
 generate_css_implementation()

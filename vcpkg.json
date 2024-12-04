@@ -1,5 +1,5 @@
 {
-  "builtin-baseline": "10b7a178346f3f0abef60cecd5130e295afd8da4",
+  "builtin-baseline": "b2cb0da531c2f1f740045bfe7c4dac59f0b2b69c",
   "dependencies": [
     {
       "name": "curl",
@@ -57,6 +57,7 @@
         "apng"
       ]
     },
+    "libproxy",
     {
       "name": "libavif",
       "features": [
@@ -70,6 +71,14 @@
         "libwebpmux",
         "simd"
       ]
+    },
+    {
+      "name": "mman",
+      "platform": "windows"
+    },
+    {
+      "name": "pthread",
+      "platform": "windows"
     },
     "simdutf",
     {
@@ -136,6 +145,10 @@
     {
       "name": "libpng",
       "version": "1.6.43#3"
+    },
+    {
+      "name": "libproxy",
+      "version": "0.4.18#3"
     },
     {
       "name": "libavif",

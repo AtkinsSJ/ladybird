@@ -13,6 +13,7 @@
 #include <LibWeb/IndexedDB/IDBDatabase.h>
 #include <LibWeb/IndexedDB/IDBFactory.h>
 #include <LibWeb/IndexedDB/Internal/Algorithms.h>
+#include <LibWeb/IndexedDB/Internal/Key.h>
 #include <LibWeb/Platform/EventLoopPlugin.h>
 #include <LibWeb/StorageAPI/StorageKey.h>
 
@@ -62,7 +63,7 @@ WebIDL::ExceptionOr<GC::Ref<IDBOpenDBRequest>> IDBFactory::open(String const& na
         auto result = open_a_database_connection(realm, storage_key.value(), name, version, request);
 
         // 2. Queue a task to run these steps:
-        HTML::queue_a_task(HTML::Task::Source::DatabaseAccess, nullptr, nullptr, GC::create_function(realm.heap(), [&realm, &request, result = move(result)]() mutable {
+        HTML::queue_a_task(HTML::Task::Source::DatabaseAccess, nullptr, nullptr, GC::create_function(realm.heap(), [&realm, request, result = move(result)]() mutable {
             // 1. If result is an error, then:
             if (result.is_error()) {
                 // 1. Set request’s result to undefined.
@@ -91,6 +92,27 @@ WebIDL::ExceptionOr<GC::Ref<IDBOpenDBRequest>> IDBFactory::open(String const& na
 
     // 6. Return a new IDBOpenDBRequest object for request.
     return request;
+}
+
+// https://w3c.github.io/IndexedDB/#dom-idbfactory-cmp
+WebIDL::ExceptionOr<i8> IDBFactory::cmp(JS::Value first, JS::Value second)
+{
+    // 1. Let a be the result of converting a value to a key with first. Rethrow any exceptions.
+    auto a = convert_a_value_to_a_key(realm(), first);
+
+    // 2. If a is invalid, throw a "DataError" DOMException.
+    if (a.is_error())
+        return WebIDL::DataError::create(realm(), "Failed to convert a value to a key"_string);
+
+    // 3. Let b be the result of converting a value to a key with second. Rethrow any exceptions.
+    auto b = convert_a_value_to_a_key(realm(), second);
+
+    // 4. If b is invalid, throw a "DataError" DOMException.
+    if (b.is_error())
+        return WebIDL::DataError::create(realm(), "Failed to convert a value to a key"_string);
+
+    // 5. Return the results of comparing two keys with a and b.
+    return Key::compare_two_keys(a.release_value(), b.release_value());
 }
 
 }

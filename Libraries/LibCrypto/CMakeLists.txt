@@ -17,6 +17,7 @@ set(SOURCES
     BigInt/Algorithms/SimpleOperations.cpp
     BigInt/SignedBigInteger.cpp
     BigInt/UnsignedBigInteger.cpp
+    Certificate/Certificate.cpp
     Checksum/Adler32.cpp
     Checksum/cksum.cpp
     Checksum/CRC32.cpp
@@ -33,6 +34,7 @@ set(SOURCES
     Hash/SHA2.cpp
     NumberTheory/ModularFunctions.cpp
     PK/RSA.cpp
+    PK/EC.cpp
 )
 
 serenity_lib(LibCrypto crypto)

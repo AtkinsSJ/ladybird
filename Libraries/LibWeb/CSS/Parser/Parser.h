@@ -69,6 +69,8 @@ public:
 
     Vector<ParsedFontFace::Source> parse_as_font_face_src();
 
+    Vector<ComponentValue> parse_as_list_of_component_values();
+
     static NonnullRefPtr<CSSStyleValue> resolve_unresolved_style_value(ParsingContext const&, DOM::Element&, Optional<CSS::Selector::PseudoElement::Type>, PropertyID, UnresolvedStyleValue const&);
 
     [[nodiscard]] LengthOrCalculated parse_as_sizes_attribute(DOM::Element const& element, HTML::HTMLImageElement const* img = nullptr);
@@ -159,9 +161,15 @@ private:
     template<typename T>
     [[nodiscard]] ComponentValue consume_a_component_value(TokenStream<T>&);
     template<typename T>
+    void consume_a_component_value_and_do_nothing(TokenStream<T>&);
+    template<typename T>
     SimpleBlock consume_a_simple_block(TokenStream<T>&);
     template<typename T>
+    void consume_a_simple_block_and_do_nothing(TokenStream<T>&);
+    template<typename T>
     Function consume_a_function(TokenStream<T>&);
+    template<typename T>
+    void consume_a_function_and_do_nothing(TokenStream<T>&);
     // TODO: consume_a_unicode_range_value()
 
     Optional<GeneralEnclosed> parse_general_enclosed(TokenStream<ComponentValue>&);
@@ -344,6 +352,8 @@ private:
     RefPtr<CSSStyleValue> parse_transform_value(TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_transform_origin_value(TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_transition_value(TokenStream<ComponentValue>&);
+    RefPtr<CSSStyleValue> parse_translate_value(TokenStream<ComponentValue>&);
+    RefPtr<CSSStyleValue> parse_scale_value(TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_grid_track_size_list(TokenStream<ComponentValue>&, bool allow_separate_line_name_blocks = false);
     RefPtr<CSSStyleValue> parse_grid_auto_track_sizes(TokenStream<ComponentValue>&);
     RefPtr<GridAutoFlowStyleValue> parse_grid_auto_flow_value(TokenStream<ComponentValue>&);

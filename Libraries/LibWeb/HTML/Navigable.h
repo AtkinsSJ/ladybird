@@ -54,8 +54,8 @@ class Navigable : public JS::Cell {
 public:
     virtual ~Navigable() override;
 
-    using NullWithError = StringView;
-    using NavigationParamsVariant = Variant<Empty, NullWithError, GC::Ref<NavigationParams>, GC::Ref<NonFetchSchemeNavigationParams>>;
+    using NullOrError = Optional<StringView>;
+    using NavigationParamsVariant = Variant<NullOrError, GC::Ref<NavigationParams>, GC::Ref<NonFetchSchemeNavigationParams>>;
 
     ErrorOr<void> initialize_navigable(GC::Ref<DocumentState> document_state, GC::Ptr<Navigable> parent);
 
@@ -132,7 +132,7 @@ public:
         SourceSnapshotParams const& source_snapshot_params,
         TargetSnapshotParams const& target_snapshot_params,
         Optional<String> navigation_id = {},
-        NavigationParamsVariant navigation_params = Empty {},
+        NavigationParamsVariant navigation_params = Navigable::NullOrError {},
         CSPNavigationType csp_navigation_type = CSPNavigationType::Other,
         bool allow_POST = false,
         GC::Ptr<GC::Function<void()>> completion_steps = {});
@@ -177,8 +177,6 @@ public:
 
     void set_needs_display(InvalidateDisplayList = InvalidateDisplayList::Yes);
 
-    void set_is_popup(TokenizedFeature::Popup is_popup) { m_is_popup = is_popup; }
-
     // https://html.spec.whatwg.org/#rendering-opportunity
     [[nodiscard]] bool has_a_rendering_opportunity() const;
 
@@ -201,9 +199,6 @@ protected:
 
     // https://html.spec.whatwg.org/multipage/browsing-the-web.html#ongoing-navigation
     Variant<Empty, Traversal, String> m_ongoing_navigation;
-
-    // https://html.spec.whatwg.org/multipage/browsers.html#is-popup
-    TokenizedFeature::Popup m_is_popup { TokenizedFeature::Popup::No };
 
 private:
     void reset_cursor_blink_cycle();

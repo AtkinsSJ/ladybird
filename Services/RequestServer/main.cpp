@@ -15,7 +15,7 @@
 #include <LibFileSystem/FileSystem.h>
 #include <LibIPC/SingleServer.h>
 #include <LibMain/Main.h>
-#include <LibTLS/Certificate.h>
+#include <LibTLS/TLSv12.h>
 #include <RequestServer/ConnectionFromClient.h>
 
 #if defined(AK_OS_MACOS)

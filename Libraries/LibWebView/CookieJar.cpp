@@ -14,7 +14,6 @@
 #include <LibURL/URL.h>
 #include <LibWeb/Cookie/ParsedCookie.h>
 #include <LibWebView/CookieJar.h>
-#include <LibWebView/URL.h>
 
 namespace WebView {
 
@@ -221,7 +220,7 @@ void CookieJar::expire_cookies_with_time_offset(AK::Duration offset)
 // https://www.ietf.org/archive/id/draft-ietf-httpbis-rfc6265bis-15.html#section-5.1.2
 Optional<String> CookieJar::canonicalize_domain(const URL::URL& url)
 {
-    if (!url.is_valid() || url.host().has<Empty>())
+    if (!url.is_valid() || !url.host().has_value())
         return {};
 
     // 1. Convert the host name to a sequence of individual domain name labels.
@@ -231,7 +230,7 @@ Optional<String> CookieJar::canonicalize_domain(const URL::URL& url)
     // 3. Concatenate the resulting labels, separated by a %x2E (".") character.
     // FIXME: Implement the above conversions.
 
-    return MUST(MUST(url.serialized_host()).to_lowercase());
+    return MUST(url.serialized_host().to_lowercase());
 }
 
 // https://www.ietf.org/archive/id/draft-ietf-httpbis-rfc6265bis-15.html#section-5.1.4
@@ -335,7 +334,7 @@ void CookieJar::store_cookie(Web::Cookie::ParsedCookie const& parsed_cookie, con
     }
 
     // 9. If the user agent is configured to reject "public suffixes" and the domain-attribute is a public suffix:
-    if (is_public_suffix(domain_attribute)) {
+    if (URL::is_public_suffix(domain_attribute)) {
         // 1. If the domain-attribute is identical to the canonicalized request-host:
         if (domain_attribute == canonicalized_domain) {
             // 1. Let the domain-attribute be the empty string.

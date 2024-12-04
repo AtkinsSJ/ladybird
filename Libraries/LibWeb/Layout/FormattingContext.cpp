@@ -645,7 +645,10 @@ CSSPixels FormattingContext::compute_height_for_replaced_element(Box const& box,
     // use the algorithm under 'Minimum and maximum widths'
     // https://www.w3.org/TR/CSS22/visudet.html#min-max-widths
     // to find the used width and height.
-    if (computed_width.is_auto() && computed_height.is_auto() && box.has_preferred_aspect_ratio()) {
+    if ((computed_width.is_auto() && computed_height.is_auto() && box.has_preferred_aspect_ratio())
+        // NOTE: This is a special case where calling tentative_width_for_replaced_element() would call us right back,
+        //       and we'd end up in an infinite loop. So we need to handle this case separately.
+        && !(!box.has_natural_width() && box.has_natural_height())) {
         CSSPixels w = tentative_width_for_replaced_element(box, computed_width, available_space);
         CSSPixels h = used_height;
         used_height = solve_replaced_size_constraint(w, h, box, available_space).height();
@@ -1223,10 +1226,15 @@ void FormattingContext::layout_absolutely_positioned_element(Box const& box, Ava
 
     // If the box width and/or height is fixed and/or or resolved from inset properties,
     // mark the size as being definite (since layout was not required to resolve it, per CSS-SIZING-3).
-    if (box.computed_values().inset().left().is_length() && box.computed_values().inset().right().is_length()) {
+    auto is_length_but_not_auto = [](auto& length_percentage) {
+        return length_percentage.is_length() && !length_percentage.is_auto();
+    };
+    if (is_length_but_not_auto(box.computed_values().inset().left())
+        && is_length_but_not_auto(box.computed_values().inset().right())) {
         box_state.set_has_definite_width(true);
     }
-    if (box.computed_values().inset().top().is_length() && box.computed_values().inset().bottom().is_length()) {
+    if (is_length_but_not_auto(box.computed_values().inset().top())
+        && is_length_but_not_auto(box.computed_values().inset().bottom())) {
         box_state.set_has_definite_height(true);
     }
 

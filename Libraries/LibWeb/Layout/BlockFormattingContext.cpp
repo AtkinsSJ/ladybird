@@ -12,7 +12,9 @@
 #include <LibWeb/Layout/BlockContainer.h>
 #include <LibWeb/Layout/BlockFormattingContext.h>
 #include <LibWeb/Layout/Box.h>
+#include <LibWeb/Layout/FieldSetBox.h>
 #include <LibWeb/Layout/InlineFormattingContext.h>
+#include <LibWeb/Layout/LegendBox.h>
 #include <LibWeb/Layout/LineBuilder.h>
 #include <LibWeb/Layout/ListItemBox.h>
 #include <LibWeb/Layout/ListItemMarkerBox.h>
@@ -70,6 +72,38 @@ void BlockFormattingContext::run(AvailableSpace const& available_space)
 {
     if (is<Viewport>(root())) {
         layout_viewport(available_space);
+        return;
+    }
+
+    if (is<FieldSetBox>(root())) {
+        if (root().children_are_inline())
+            layout_inline_children(root(), available_space);
+        else
+            layout_block_level_children(root(), available_space);
+
+        auto const& fieldset_box = verify_cast<FieldSetBox>(root());
+        if (!(fieldset_box.has_rendered_legend())) {
+            return;
+        }
+
+        auto const* legend = root().first_child_of_type<LegendBox>();
+        auto& legend_state = m_state.get_mutable(*legend);
+        auto& fieldset_state = m_state.get_mutable(root());
+
+        // The element is expected to be positioned in the block-flow direction such that
+        // its border box is centered over the border on the block-start side of the fieldset element.
+        // FIXME: this should take writing modes into consideration.
+        auto legend_height = legend_state.border_box_height();
+        auto new_y = -((legend_height) / 2) - fieldset_state.padding_top;
+        legend_state.set_content_offset({ legend_state.offset.x(), new_y });
+
+        // If the computed value of 'inline-size' is 'auto',
+        // then the used value is the fit-content inline size.
+        if (legend->computed_values().width().is_auto()) {
+            auto width = calculate_fit_content_width(*legend, available_space);
+            legend_state.set_content_width(width);
+        }
+
         return;
     }
 
@@ -864,29 +898,7 @@ void BlockFormattingContext::resolve_vertical_box_model_metrics(Box const& box, 
 
 CSSPixels BlockFormattingContext::BlockMarginState::current_collapsed_margin() const
 {
-    CSSPixels smallest_margin = 0;
-    CSSPixels largest_margin = 0;
-    size_t negative_margin_count = 0;
-    for (auto margin : current_collapsible_margins) {
-        if (margin < 0)
-            ++negative_margin_count;
-        largest_margin = max(largest_margin, margin);
-        smallest_margin = min(smallest_margin, margin);
-    }
-
-    CSSPixels collapsed_margin = 0;
-    if (negative_margin_count == current_collapsible_margins.size()) {
-        // When all margins are negative, the size of the collapsed margin is the smallest (most negative) margin.
-        collapsed_margin = smallest_margin;
-    } else if (negative_margin_count > 0) {
-        // When negative margins are involved, the size of the collapsed margin is the sum of the largest positive margin and the smallest (most negative) negative margin.
-        collapsed_margin = largest_margin + smallest_margin;
-    } else {
-        // Otherwise, collapse all the adjacent margins by using only the largest one.
-        collapsed_margin = largest_margin;
-    }
-
-    return collapsed_margin;
+    return current_positive_collapsible_margin + current_negative_collapsible_margin;
 }
 
 BlockFormattingContext::DidIntroduceClearance BlockFormattingContext::clear_floating_boxes(Node const& child_box, Optional<InlineFormattingContext&> inline_formatting_context)

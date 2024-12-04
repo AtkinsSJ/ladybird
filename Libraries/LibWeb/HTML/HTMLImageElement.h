@@ -52,11 +52,11 @@ public:
 
     RefPtr<Gfx::ImmutableBitmap> immutable_bitmap() const;
 
-    unsigned width() const;
-    WebIDL::ExceptionOr<void> set_width(unsigned);
+    WebIDL::UnsignedLong width() const;
+    WebIDL::ExceptionOr<void> set_width(WebIDL::UnsignedLong);
 
-    unsigned height() const;
-    WebIDL::ExceptionOr<void> set_height(unsigned);
+    WebIDL::UnsignedLong height() const;
+    WebIDL::ExceptionOr<void> set_height(WebIDL::UnsignedLong);
 
     unsigned natural_width() const;
     unsigned natural_height() const;
@@ -86,10 +86,6 @@ public:
 
     // https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
     [[nodiscard]] Optional<ImageSourceAndPixelDensity> select_an_image_source();
-
-    StringView decoding() const;
-
-    void set_decoding(String);
 
     void set_source_set(SourceSet);
 
@@ -162,15 +158,6 @@ private:
     SourceSet m_source_set;
 
     CSSPixelSize m_last_seen_viewport_size;
-
-    // https://html.spec.whatwg.org/multipage/images.html#image-decoding-hint
-    enum class ImageDecodingHint {
-        Auto,
-        Sync,
-        Async
-    };
-
-    ImageDecodingHint m_decoding_hint = ImageDecodingHint::Auto;
 };
 
 }

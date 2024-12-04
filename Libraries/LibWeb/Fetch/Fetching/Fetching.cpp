@@ -322,7 +322,7 @@ WebIDL::ExceptionOr<GC::Ptr<PendingResponse>> main_fetch(JS::Realm& realm, Infra
         // - request’s current URL’s scheme is "http"
         request->current_url().scheme() == "http"sv
         // - request’s current URL’s host is a domain
-        && DOMURL::host_is_domain(request->current_url().host())
+        && request->current_url().host().has_value() && request->current_url().host()->is_domain()
         // FIXME: - Matching request’s current URL’s host per Known HSTS Host Domain Name Matching results in either a
         //          superdomain match with an asserted includeSubDomains directive or a congruent match (with or without an
         //          asserted includeSubDomains directive) [HSTS]; or DNS resolution for the request finds a matching HTTPS RR
@@ -1880,7 +1880,7 @@ WebIDL::ExceptionOr<GC::Ref<PendingResponse>> http_network_or_cache_fetch(JS::Re
                 //    with the user agent’s cookie store and httpRequest’s current URL.
                 auto cookies = ([&] {
                     // FIXME: Getting to the page client reliably is way too complicated, and going via the document won't work in workers.
-                    auto document = Bindings::principal_host_defined_environment_settings_object(realm).responsible_document();
+                    auto document = Bindings::principal_host_defined_environment_settings_object(HTML::principal_realm(realm)).responsible_document();
                     if (!document)
                         return String {};
                     return document->page().client().page_did_request_cookie(http_request->current_url(), Cookie::Source::Http);
@@ -2240,7 +2240,7 @@ WebIDL::ExceptionOr<GC::Ref<PendingResponse>> nonstandard_resource_loader_file_o
 
     auto request = fetch_params.request();
 
-    auto& page = Bindings::principal_host_defined_page(realm);
+    auto& page = Bindings::principal_host_defined_page(HTML::principal_realm(realm));
 
     // NOTE: Using LoadRequest::create_for_url_on_page here will unconditionally add cookies as long as there's a page available.
     //       However, it is up to http_network_or_cache_fetch to determine if cookies should be added to the request.

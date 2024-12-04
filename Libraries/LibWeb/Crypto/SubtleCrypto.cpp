@@ -34,7 +34,7 @@ struct RegisteredAlgorithm {
 using SupportedAlgorithmsMap = HashMap<String, HashMap<String, RegisteredAlgorithm, AK::ASCIICaseInsensitiveStringTraits>>;
 
 static SupportedAlgorithmsMap& supported_algorithms_internal();
-static SupportedAlgorithmsMap supported_algorithms();
+static SupportedAlgorithmsMap const& supported_algorithms();
 
 template<typename Methods, typename Param = AlgorithmParams>
 static void define_an_algorithm(String op, String algorithm);
@@ -77,7 +77,7 @@ WebIDL::ExceptionOr<NormalizedAlgorithmAndParameter> normalize_an_algorithm(JS::
     // If alg is an object:
     // 1. Let registeredAlgorithms be the associative container stored at the op key of supportedAlgorithms.
     // NOTE: There should always be a container at the op key.
-    auto internal_object = supported_algorithms();
+    auto const& internal_object = supported_algorithms();
     auto maybe_registered_algorithms = internal_object.get(operation);
     auto registered_algorithms = maybe_registered_algorithms.value();
 
@@ -88,6 +88,10 @@ WebIDL::ExceptionOr<NormalizedAlgorithmAndParameter> normalize_an_algorithm(JS::
     //       fetch the actual algorithm factory from the registeredAlgorithms map.
     auto initial_algorithm = TRY(algorithm.get<GC::Root<JS::Object>>()->get("name"));
 
+    if (initial_algorithm.is_undefined()) {
+        return vm.throw_completion<JS::TypeError>(JS::ErrorType::NotAnObjectOfType, "Algorithm");
+    }
+
     // 4. Let algName be the value of the name attribute of initialAlg.
     auto algorithm_name = TRY(initial_algorithm.to_string(vm));
 
@@ -96,6 +100,8 @@ WebIDL::ExceptionOr<NormalizedAlgorithmAndParameter> normalize_an_algorithm(JS::
     // 5. If registeredAlgorithms contains a key that is a case-insensitive string match for algName:
     if (auto it = registered_algorithms.find(algorithm_name); it != registered_algorithms.end()) {
         // 1. Set algName to the value of the matching key.
+        algorithm_name = it->key;
+
         // 2. Let desiredType be the IDL dictionary type stored at algName in registeredAlgorithms.
         desired_type = it->value;
     } else {
@@ -106,7 +112,6 @@ WebIDL::ExceptionOr<NormalizedAlgorithmAndParameter> normalize_an_algorithm(JS::
 
     // 8. Let normalizedAlgorithm be the result of converting the ECMAScript object represented by alg
     // to the IDL dictionary type desiredType, as defined by [WebIDL].
-    // 9. Set the name attribute of normalizedAlgorithm to algName.
     // 10. If an error occurred, return the error and terminate this algorithm.
     // 11. Let dictionaries be a list consisting of the IDL dictionary type desiredType
     // and all of desiredType's inherited dictionaries, in order from least to most derived.
@@ -114,6 +119,11 @@ WebIDL::ExceptionOr<NormalizedAlgorithmAndParameter> normalize_an_algorithm(JS::
     //    Note: All of these steps are handled by the create_methods and parameter_from_value methods.
     auto methods = desired_type.create_methods(realm);
     auto parameter = TRY(desired_type.parameter_from_value(vm, algorithm.get<GC::Root<JS::Object>>()));
+
+    // 9. Set the name attribute of normalizedAlgorithm to algName.
+    VERIFY(parameter->name.is_empty());
+    parameter->name = algorithm_name;
+
     auto normalized_algorithm = NormalizedAlgorithmAndParameter { move(methods), move(parameter) };
 
     // 13. Return normalizedAlgorithm.
@@ -741,7 +751,7 @@ SupportedAlgorithmsMap& supported_algorithms_internal()
 }
 
 // https://w3c.github.io/webcrypto/#algorithm-normalization-internalS
-SupportedAlgorithmsMap supported_algorithms()
+SupportedAlgorithmsMap const& supported_algorithms()
 {
     auto& internal_object = supported_algorithms_internal();
 
@@ -801,9 +811,9 @@ SupportedAlgorithmsMap supported_algorithms()
     // FIXME: define_an_algorithm<ECDSA>("exportKey"_string, "ECDSA"_string);
 
     // https://w3c.github.io/webcrypto/#ecdh-registration
-    // FIXME: define_an_algorithm<ECDH, EcdhKeyDerivePrams>("deriveBits"_string, "ECDH"_string);
-    // FIXME: define_an_algorithm<ECDH, EcKeyImportParams>("importKey"_string, "ECDH"_string);
-    // FIXME: define_an_algorithm<ECDH>("exportKey"_string, "ECDH"_string);
+    define_an_algorithm<ECDH, EcKeyImportParams>("importKey"_string, "ECDH"_string);
+    define_an_algorithm<ECDH>("exportKey"_string, "ECDH"_string);
+    define_an_algorithm<ECDH, EcdhKeyDeriveParams>("deriveBits"_string, "ECDH"_string);
     define_an_algorithm<ECDH, EcKeyGenParams>("generateKey"_string, "ECDH"_string);
 
     // https://w3c.github.io/webcrypto/#aes-ctr-registration
@@ -863,23 +873,23 @@ SupportedAlgorithmsMap supported_algorithms()
     define_an_algorithm<PBKDF2>("get key length"_string, "PBKDF2"_string);
 
     // https://wicg.github.io/webcrypto-secure-curves/#x25519-registration
-    define_an_algorithm<X25519, EcdhKeyDerivePrams>("deriveBits"_string, "X25519"_string);
+    define_an_algorithm<X25519, EcdhKeyDeriveParams>("deriveBits"_string, "X25519"_string);
     define_an_algorithm<X25519>("generateKey"_string, "X25519"_string);
     define_an_algorithm<X25519>("importKey"_string, "X25519"_string);
     define_an_algorithm<X25519>("exportKey"_string, "X25519"_string);
 
     // https://wicg.github.io/webcrypto-secure-curves/#x448-registration
-    // FIXME: define_an_algorithm<X448, EcdhKeyDerivePrams>("deriveBits"_string, "X448"_string);
-    // FIXME: define_an_algorithm<X448>("generateKey"_string, "X448"_string);
-    // FIXME: define_an_algorithm<X448>("importKey"_string, "X448"_string);
-    // FIXME: define_an_algorithm<X448>("exportKey"_string, "X448"_string);
+    define_an_algorithm<X448, EcdhKeyDeriveParams>("deriveBits"_string, "X448"_string);
+    define_an_algorithm<X448>("generateKey"_string, "X448"_string);
+    define_an_algorithm<X448>("importKey"_string, "X448"_string);
+    define_an_algorithm<X448>("exportKey"_string, "X448"_string);
 
     // https://wicg.github.io/webcrypto-secure-curves/#ed25519-registration
     define_an_algorithm<ED25519>("sign"_string, "Ed25519"_string);
     define_an_algorithm<ED25519>("verify"_string, "Ed25519"_string);
     define_an_algorithm<ED25519>("generateKey"_string, "Ed25519"_string);
-    // FIXME: define_an_algorithm<ED25519>("importKey"_string, "Ed25519"_string);
-    // FIXME: define_an_algorithm<ED25519>("exportKey"_string, "Ed25519"_string);
+    define_an_algorithm<ED25519>("importKey"_string, "Ed25519"_string);
+    define_an_algorithm<ED25519>("exportKey"_string, "Ed25519"_string);
 
     // https://wicg.github.io/webcrypto-secure-curves/#ed448-registration
     // FIXME: define_an_algorithm<ED448, Ed448Params>("sign"_string, "Ed448"_string);

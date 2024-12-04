@@ -48,7 +48,13 @@
 #include <LibJS/Runtime/StringObject.h>
 #include <LibJS/Runtime/StringPrototype.h>
 #include <LibJS/Runtime/Temporal/Duration.h>
+#include <LibJS/Runtime/Temporal/Instant.h>
+#include <LibJS/Runtime/Temporal/PlainDate.h>
+#include <LibJS/Runtime/Temporal/PlainDateTime.h>
 #include <LibJS/Runtime/Temporal/PlainMonthDay.h>
+#include <LibJS/Runtime/Temporal/PlainTime.h>
+#include <LibJS/Runtime/Temporal/PlainYearMonth.h>
+#include <LibJS/Runtime/Temporal/ZonedDateTime.h>
 #include <LibJS/Runtime/TypedArray.h>
 #include <LibJS/Runtime/Value.h>
 #include <LibJS/Runtime/WeakMap.h>
@@ -463,7 +469,8 @@ ErrorOr<void> print_typed_array(JS::PrintContext& print_context, JS::TypedArrayB
     TRY(print_value(print_context, JS::Value(JS::typed_array_byte_length(typed_array_record)), seen_objects));
 
     TRY(js_out(print_context, "\n"));
-    // FIXME: This kinda sucks.
+    // FIXME: Find a better way to print typed arrays to the console.
+    // The current solution is limited to 100 lines, is hard to read, and hampers debugging.
 #define __JS_ENUMERATE(ClassName, snake_name, PrototypeName, ConstructorName, ArrayType) \
     if (is<JS::ClassName>(typed_array_base)) {                                           \
         TRY(js_out(print_context, "[ "));                                                \
@@ -836,12 +843,66 @@ ErrorOr<void> print_temporal_duration(JS::PrintContext& print_context, JS::Tempo
     return {};
 }
 
+ErrorOr<void> print_temporal_instant(JS::PrintContext& print_context, JS::Temporal::Instant const& instant, HashTable<JS::Object*>& seen_objects)
+{
+    TRY(print_type(print_context, "Temporal.Instant"sv));
+    TRY(js_out(print_context, " "));
+    TRY(print_value(print_context, instant.epoch_nanoseconds(), seen_objects));
+    return {};
+}
+
+ErrorOr<void> print_temporal_plain_date(JS::PrintContext& print_context, JS::Temporal::PlainDate const& plain_date, HashTable<JS::Object*>& seen_objects)
+{
+    TRY(print_type(print_context, "Temporal.PlainDate"sv));
+    TRY(js_out(print_context, " \033[34;1m{:04}-{:02}-{:02}\033[0m", plain_date.iso_date().year, plain_date.iso_date().month, plain_date.iso_date().day));
+    TRY(js_out(print_context, "\n  calendar: "));
+    TRY(print_value(print_context, JS::PrimitiveString::create(plain_date.vm(), plain_date.calendar()), seen_objects));
+    return {};
+}
+
+ErrorOr<void> print_temporal_plain_date_time(JS::PrintContext& print_context, JS::Temporal::PlainDateTime const& plain_date_time, HashTable<JS::Object*>& seen_objects)
+{
+    TRY(print_type(print_context, "Temporal.PlainDateTime"sv));
+    TRY(js_out(print_context, " \033[34;1m{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}{:03}{:03}\033[0m", plain_date_time.iso_date_time().iso_date.year, plain_date_time.iso_date_time().iso_date.month, plain_date_time.iso_date_time().iso_date.day, plain_date_time.iso_date_time().time.hour, plain_date_time.iso_date_time().time.minute, plain_date_time.iso_date_time().time.second, plain_date_time.iso_date_time().time.millisecond, plain_date_time.iso_date_time().time.microsecond, plain_date_time.iso_date_time().time.nanosecond));
+    TRY(js_out(print_context, "\n  calendar: "));
+    TRY(print_value(print_context, JS::PrimitiveString::create(plain_date_time.vm(), plain_date_time.calendar()), seen_objects));
+    return {};
+}
+
 ErrorOr<void> print_temporal_plain_month_day(JS::PrintContext& print_context, JS::Temporal::PlainMonthDay const& plain_month_day, HashTable<JS::Object*>& seen_objects)
 {
     TRY(print_type(print_context, "Temporal.PlainMonthDay"sv));
     TRY(js_out(print_context, " \033[34;1m{:02}-{:02}\033[0m", plain_month_day.iso_date().month, plain_month_day.iso_date().day));
     TRY(js_out(print_context, "\n  calendar: "));
     TRY(print_value(print_context, JS::PrimitiveString::create(plain_month_day.vm(), plain_month_day.calendar()), seen_objects));
+    return {};
+}
+
+ErrorOr<void> print_temporal_plain_time(JS::PrintContext& print_context, JS::Temporal::PlainTime const& plain_time, HashTable<JS::Object*>&)
+{
+    TRY(print_type(print_context, "Temporal.PlainTime"sv));
+    TRY(js_out(print_context, " \033[34;1m{:02}:{:02}:{:02}.{:03}{:03}{:03}\033[0m", plain_time.time().hour, plain_time.time().minute, plain_time.time().second, plain_time.time().millisecond, plain_time.time().microsecond, plain_time.time().nanosecond));
+    return {};
+}
+
+ErrorOr<void> print_temporal_plain_year_month(JS::PrintContext& print_context, JS::Temporal::PlainYearMonth const& plain_year_month, HashTable<JS::Object*>& seen_objects)
+{
+    TRY(print_type(print_context, "Temporal.PlainYearMonth"sv));
+    TRY(js_out(print_context, " \033[34;1m{:04}-{:02}\033[0m", plain_year_month.iso_date().year, plain_year_month.iso_date().month));
+    TRY(js_out(print_context, "\n  calendar: "));
+    TRY(print_value(print_context, JS::PrimitiveString::create(plain_year_month.vm(), plain_year_month.calendar()), seen_objects));
+    return {};
+}
+
+ErrorOr<void> print_temporal_zoned_date_time(JS::PrintContext& print_context, JS::Temporal::ZonedDateTime const& zoned_date_time, HashTable<JS::Object*>& seen_objects)
+{
+    TRY(print_type(print_context, "Temporal.ZonedDateTime"sv));
+    TRY(js_out(print_context, "\n  epochNanoseconds: "));
+    TRY(print_value(print_context, zoned_date_time.epoch_nanoseconds(), seen_objects));
+    TRY(js_out(print_context, "\n  timeZone: "));
+    TRY(print_value(print_context, JS::PrimitiveString::create(zoned_date_time.vm(), zoned_date_time.time_zone()), seen_objects));
+    TRY(js_out(print_context, "\n  calendar: "));
+    TRY(print_value(print_context, JS::PrimitiveString::create(zoned_date_time.vm(), zoned_date_time.calendar()), seen_objects));
     return {};
 }
 
@@ -962,8 +1023,20 @@ ErrorOr<void> print_value(JS::PrintContext& print_context, JS::Value value, Hash
             return print_intl_duration_format(print_context, static_cast<JS::Intl::DurationFormat&>(object), seen_objects);
         if (is<JS::Temporal::Duration>(object))
             return print_temporal_duration(print_context, static_cast<JS::Temporal::Duration&>(object), seen_objects);
+        if (is<JS::Temporal::Instant>(object))
+            return print_temporal_instant(print_context, static_cast<JS::Temporal::Instant&>(object), seen_objects);
+        if (is<JS::Temporal::PlainDate>(object))
+            return print_temporal_plain_date(print_context, static_cast<JS::Temporal::PlainDate&>(object), seen_objects);
+        if (is<JS::Temporal::PlainDateTime>(object))
+            return print_temporal_plain_date_time(print_context, static_cast<JS::Temporal::PlainDateTime&>(object), seen_objects);
         if (is<JS::Temporal::PlainMonthDay>(object))
             return print_temporal_plain_month_day(print_context, static_cast<JS::Temporal::PlainMonthDay&>(object), seen_objects);
+        if (is<JS::Temporal::PlainTime>(object))
+            return print_temporal_plain_time(print_context, static_cast<JS::Temporal::PlainTime&>(object), seen_objects);
+        if (is<JS::Temporal::PlainYearMonth>(object))
+            return print_temporal_plain_year_month(print_context, static_cast<JS::Temporal::PlainYearMonth&>(object), seen_objects);
+        if (is<JS::Temporal::ZonedDateTime>(object))
+            return print_temporal_zoned_date_time(print_context, static_cast<JS::Temporal::ZonedDateTime&>(object), seen_objects);
         return print_object(print_context, object, seen_objects);
     }
 

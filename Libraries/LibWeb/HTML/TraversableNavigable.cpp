@@ -644,7 +644,7 @@ TraversableNavigable::HistoryStepResult TraversableNavigable::apply_the_history_
                 //    targetSnapshotParams, with allowPOST set to allowPOST and completionSteps set to queue a global task on the navigation and traversal task source given
                 //    navigable's active window to run afterDocumentPopulated.
                 Platform::EventLoopPlugin::the().deferred_invoke(GC::create_function(this->heap(), [populated_target_entry, potentially_target_specific_source_snapshot_params, target_snapshot_params, this, allow_POST, navigable, after_document_populated = GC::create_function(this->heap(), move(after_document_populated))] {
-                    navigable->populate_session_history_entry_document(populated_target_entry, *potentially_target_specific_source_snapshot_params, target_snapshot_params, {}, Empty {}, CSPNavigationType::Other, allow_POST, GC::create_function(this->heap(), [this, after_document_populated, populated_target_entry]() mutable {
+                    navigable->populate_session_history_entry_document(populated_target_entry, *potentially_target_specific_source_snapshot_params, target_snapshot_params, {}, Navigable::NullOrError {}, CSPNavigationType::Other, allow_POST, GC::create_function(this->heap(), [this, after_document_populated, populated_target_entry]() mutable {
                                  VERIFY(active_window());
                                  queue_global_task(Task::Source::NavigationAndTraversal, *active_window(), GC::create_function(this->heap(), [after_document_populated, populated_target_entry]() mutable {
                                      after_document_populated->function()(true, populated_target_entry);
@@ -815,15 +815,17 @@ TraversableNavigable::HistoryStepResult TraversableNavigable::apply_the_history_
 
     // 18. For each navigable of nonchangingNavigablesThatStillNeedUpdates, queue a global task on the navigation and traversal task source given navigable's active window to run the steps:
     for (auto& navigable : non_changing_navigables_that_still_need_updates) {
-        if (navigable->has_been_destroyed()) {
+        // AD-HOC: This check is not in the spec but we should not continue navigation if navigable has been destroyed,
+        //         or if there's no active window.
+        if (navigable->has_been_destroyed() || !navigable->active_window()) {
             ++completed_non_changing_jobs;
             continue;
         }
 
-        VERIFY(navigable->active_window());
         queue_global_task(Task::Source::NavigationAndTraversal, *navigable->active_window(), GC::create_function(heap(), [&] {
-            // NOTE: This check is not in the spec but we should not continue navigation if navigable has been destroyed.
-            if (navigable->has_been_destroyed()) {
+            // AD-HOC: This check is not in the spec but we should not continue navigation if navigable has been destroyed,
+            //         or if there's no active window.
+            if (navigable->has_been_destroyed() || !navigable->active_window()) {
                 ++completed_non_changing_jobs;
                 return;
             }

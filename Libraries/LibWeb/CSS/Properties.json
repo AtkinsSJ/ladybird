@@ -2370,6 +2370,13 @@
       "unitless-length"
     ]
   },
+  "scale": {
+    "animation-type": "custom",
+    "inherited": false,
+    "initial": "none",
+    "affects-layout": false,
+    "affects-stacking-context": true
+  },
   "scrollbar-gutter": {
     "affects-layout": false,
     "animation-type": "discrete",
@@ -2724,6 +2731,13 @@
     "valid-types": [
       "easing-function"
     ]
+  },
+  "translate": {
+    "animation-type": "custom",
+    "inherited": false,
+    "initial": "none",
+    "affects-layout": false,
+    "affects-stacking-context": true
   },
   "unicode-bidi": {
     "animation-type": "none",

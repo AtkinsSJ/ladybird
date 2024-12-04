@@ -26,7 +26,6 @@ ByteString g_default_certificate_path;
 static HashMap<int, RefPtr<ConnectionFromClient>> s_connections;
 static IDAllocator s_client_ids;
 static long s_connect_timeout_seconds = 90L;
-static HashMap<ByteString, ByteString> g_dns_cache; // host -> curl "resolve" string
 static struct {
     Optional<Core::SocketAddress> server_address;
     Optional<ByteString> server_hostname;
@@ -59,7 +58,7 @@ static NonnullRefPtr<Resolver> default_resolver()
         }
 
         return DNS::Resolver::SocketResult {
-            MaybeOwned<Core::Socket>(TRY(Core::BufferedSocket<Core::UDPSocket>::create(TRY(Core::UDPSocket::connect(*g_dns_info.server_address))))),
+            MaybeOwned<Core::Socket>(TRY(Core::BufferedUDPSocket::create(TRY(Core::UDPSocket::connect(*g_dns_info.server_address))))),
             DNS::Resolver::ConnectionMode::UDP,
         };
     });
@@ -71,6 +70,7 @@ static NonnullRefPtr<Resolver> default_resolver()
 struct ConnectionFromClient::ActiveRequest {
     CURLM* multi { nullptr };
     CURL* easy { nullptr };
+    Vector<curl_slist*> curl_string_lists;
     i32 request_id { 0 };
     RefPtr<Core::Notifier> notifier;
     WeakPtr<ConnectionFromClient> client;
@@ -100,6 +100,9 @@ struct ConnectionFromClient::ActiveRequest {
         auto result = curl_multi_remove_handle(multi, easy);
         VERIFY(result == CURLM_OK);
         curl_easy_cleanup(easy);
+
+        for (auto* string_list : curl_string_lists)
+            curl_slist_free_all(string_list);
     }
 
     void flush_headers_if_needed()
@@ -343,121 +346,125 @@ void ConnectionFromClient::start_request(i32 request_id, ByteString const& metho
         return;
     }
 
-    auto host = url.serialized_host().value().to_byte_string();
-    auto dns_promise = m_resolver->dns.lookup(host, DNS::Messages::Class::IN, Array { DNS::Messages::ResourceType::A, DNS::Messages::ResourceType::AAAA }.span());
-    auto resolve_result = dns_promise->await();
-    if (resolve_result.is_error()) {
-        dbgln("StartRequest: DNS lookup failed for '{}': {}", host, resolve_result.error());
-        async_request_finished(request_id, 0, Requests::NetworkError::UnableToResolveHost);
-        return;
-    }
+    auto host = url.serialized_host().to_byte_string();
+    m_resolver->dns.lookup(host, DNS::Messages::Class::IN, Array { DNS::Messages::ResourceType::A, DNS::Messages::ResourceType::AAAA }.span())
+        ->when_rejected([this, request_id](auto const& error) {
+            dbgln("StartRequest: DNS lookup failed: {}", error);
+            async_request_finished(request_id, 0, Requests::NetworkError::UnableToResolveHost);
+        })
+        .when_resolved([this, request_id, host, url, method, request_body, request_headers, proxy_data](auto const& dns_result) {
+            if (dns_result->records().is_empty()) {
+                dbgln("StartRequest: DNS lookup failed for '{}'", host);
+                async_request_finished(request_id, 0, Requests::NetworkError::UnableToResolveHost);
+                return;
+            }
 
-    auto dns_result = resolve_result.release_value();
-    if (dns_result->records().is_empty()) {
-        dbgln("StartRequest: DNS lookup failed for '{}'", host);
-        async_request_finished(request_id, 0, Requests::NetworkError::UnableToResolveHost);
-        return;
-    }
+            auto* easy = curl_easy_init();
+            if (!easy) {
+                dbgln("StartRequest: Failed to initialize curl easy handle");
+                return;
+            }
 
-    auto* easy = curl_easy_init();
-    if (!easy) {
-        dbgln("StartRequest: Failed to initialize curl easy handle");
-        return;
-    }
+            auto fds_or_error = Core::System::pipe2(O_NONBLOCK);
+            if (fds_or_error.is_error()) {
+                dbgln("StartRequest: Failed to create pipe: {}", fds_or_error.error());
+                return;
+            }
 
-    auto fds_or_error = Core::System::pipe2(O_NONBLOCK);
-    if (fds_or_error.is_error()) {
-        dbgln("StartRequest: Failed to create pipe: {}", fds_or_error.error());
-        return;
-    }
+            auto fds = fds_or_error.release_value();
+            auto writer_fd = fds[1];
+            auto reader_fd = fds[0];
+            async_request_started(request_id, IPC::File::adopt_fd(reader_fd));
 
-    auto fds = fds_or_error.release_value();
-    auto writer_fd = fds[1];
-    auto reader_fd = fds[0];
-    async_request_started(request_id, IPC::File::adopt_fd(reader_fd));
+            auto request = make<ActiveRequest>(*this, m_curl_multi, easy, request_id, writer_fd);
+            request->url = url.to_string().value();
 
-    auto request = make<ActiveRequest>(*this, m_curl_multi, easy, request_id, writer_fd);
-    request->url = url.to_string().value();
+            auto set_option = [easy](auto option, auto value) {
+                auto result = curl_easy_setopt(easy, option, value);
+                if (result != CURLE_OK) {
+                    dbgln("StartRequest: Failed to set curl option: {}", curl_easy_strerror(result));
+                    return false;
+                }
+                return true;
+            };
 
-    auto set_option = [easy](auto option, auto value) {
-        auto result = curl_easy_setopt(easy, option, value);
-        if (result != CURLE_OK) {
-            dbgln("StartRequest: Failed to set curl option: {}", curl_easy_strerror(result));
-            return false;
-        }
-        return true;
-    };
+            set_option(CURLOPT_PRIVATE, request.ptr());
 
-    set_option(CURLOPT_PRIVATE, request.ptr());
+            if (!g_default_certificate_path.is_empty())
+                set_option(CURLOPT_CAINFO, g_default_certificate_path.characters());
 
-    if (!g_default_certificate_path.is_empty())
-        set_option(CURLOPT_CAINFO, g_default_certificate_path.characters());
+            set_option(CURLOPT_ACCEPT_ENCODING, "gzip, deflate, br");
+            set_option(CURLOPT_URL, url.to_string().value().to_byte_string().characters());
+            set_option(CURLOPT_PORT, url.port_or_default());
+            set_option(CURLOPT_CONNECTTIMEOUT, s_connect_timeout_seconds);
 
-    set_option(CURLOPT_ACCEPT_ENCODING, "gzip, deflate, br");
-    set_option(CURLOPT_URL, url.to_string().value().to_byte_string().characters());
-    set_option(CURLOPT_PORT, url.port_or_default());
-    set_option(CURLOPT_CONNECTTIMEOUT, s_connect_timeout_seconds);
+            bool did_set_body = false;
 
-    bool did_set_body = false;
+            if (method == "GET"sv) {
+                set_option(CURLOPT_HTTPGET, 1L);
+            } else if (method.is_one_of("POST"sv, "PUT"sv, "PATCH"sv, "DELETE"sv)) {
+                request->body = request_body;
+                set_option(CURLOPT_POSTFIELDSIZE, request->body.size());
+                set_option(CURLOPT_POSTFIELDS, request->body.data());
+                did_set_body = true;
+            } else if (method == "HEAD") {
+                set_option(CURLOPT_NOBODY, 1L);
+            }
+            set_option(CURLOPT_CUSTOMREQUEST, method.characters());
 
-    if (method == "GET"sv) {
-        set_option(CURLOPT_HTTPGET, 1L);
-    } else if (method.is_one_of("POST"sv, "PUT"sv, "PATCH"sv, "DELETE"sv)) {
-        request->body = request_body;
-        set_option(CURLOPT_POSTFIELDSIZE, request->body.size());
-        set_option(CURLOPT_POSTFIELDS, request->body.data());
-        did_set_body = true;
-    } else if (method == "HEAD") {
-        set_option(CURLOPT_NOBODY, 1L);
-    }
-    set_option(CURLOPT_CUSTOMREQUEST, method.characters());
+            set_option(CURLOPT_FOLLOWLOCATION, 0);
 
-    set_option(CURLOPT_FOLLOWLOCATION, 0);
+            struct curl_slist* curl_headers = nullptr;
 
-    struct curl_slist* curl_headers = nullptr;
+            // NOTE: CURLOPT_POSTFIELDS automatically sets the Content-Type header.
+            //       Set it to empty if the headers passed in don't contain a content type.
+            if (did_set_body && !request_headers.contains("Content-Type"))
+                curl_headers = curl_slist_append(curl_headers, "Content-Type:");
 
-    // NOTE: CURLOPT_POSTFIELDS automatically sets the Content-Type header.
-    //       Set it to empty if the headers passed in don't contain a content type.
-    if (did_set_body && !request_headers.contains("Content-Type"))
-        curl_headers = curl_slist_append(curl_headers, "Content-Type:");
+            for (auto const& header : request_headers.headers()) {
+                auto header_string = ByteString::formatted("{}: {}", header.name, header.value);
+                curl_headers = curl_slist_append(curl_headers, header_string.characters());
+            }
 
-    for (auto const& header : request_headers.headers()) {
-        auto header_string = ByteString::formatted("{}: {}", header.name, header.value);
-        curl_headers = curl_slist_append(curl_headers, header_string.characters());
-    }
-    set_option(CURLOPT_HTTPHEADER, curl_headers);
+            if (curl_headers) {
+                set_option(CURLOPT_HTTPHEADER, curl_headers);
+                request->curl_string_lists.append(curl_headers);
+            }
 
-    // FIXME: Set up proxy if applicable
-    (void)proxy_data;
+            // FIXME: Set up proxy if applicable
+            (void)proxy_data;
 
-    set_option(CURLOPT_WRITEFUNCTION, &on_data_received);
-    set_option(CURLOPT_WRITEDATA, reinterpret_cast<void*>(request.ptr()));
+            set_option(CURLOPT_WRITEFUNCTION, &on_data_received);
+            set_option(CURLOPT_WRITEDATA, reinterpret_cast<void*>(request.ptr()));
 
-    set_option(CURLOPT_HEADERFUNCTION, &on_header_received);
-    set_option(CURLOPT_HEADERDATA, reinterpret_cast<void*>(request.ptr()));
+            set_option(CURLOPT_HEADERFUNCTION, &on_header_received);
+            set_option(CURLOPT_HEADERDATA, reinterpret_cast<void*>(request.ptr()));
 
-    StringBuilder resolve_opt_builder;
-    resolve_opt_builder.appendff("{}:{}:", host, url.port_or_default());
-    auto first = true;
-    for (auto& addr : dns_result->cached_addresses()) {
-        auto formatted_address = addr.visit(
-            [&](IPv4Address const& ipv4) { return ipv4.to_byte_string(); },
-            [&](IPv6Address const& ipv6) { return MUST(ipv6.to_string()).to_byte_string(); });
-        if (!first)
-            resolve_opt_builder.append(',');
-        first = false;
-        resolve_opt_builder.append(formatted_address);
-    }
+            StringBuilder resolve_opt_builder;
+            resolve_opt_builder.appendff("{}:{}:", host, url.port_or_default());
+            auto first = true;
+            for (auto& addr : dns_result->cached_addresses()) {
+                auto formatted_address = addr.visit(
+                    [&](IPv4Address const& ipv4) { return ipv4.to_byte_string(); },
+                    [&](IPv6Address const& ipv6) { return MUST(ipv6.to_string()).to_byte_string(); });
+                if (!first)
+                    resolve_opt_builder.append(',');
+                first = false;
+                resolve_opt_builder.append(formatted_address);
+            }
 
-    auto formatted_address = resolve_opt_builder.to_byte_string();
-    g_dns_cache.set(host, formatted_address);
-    curl_slist* resolve_list = curl_slist_append(nullptr, formatted_address.characters());
-    curl_easy_setopt(easy, CURLOPT_RESOLVE, resolve_list);
+            auto formatted_address = resolve_opt_builder.to_byte_string();
+            if (curl_slist* resolve_list = curl_slist_append(nullptr, formatted_address.characters())) {
+                set_option(CURLOPT_RESOLVE, resolve_list);
+                request->curl_string_lists.append(resolve_list);
+            } else
+                VERIFY_NOT_REACHED();
 
-    auto result = curl_multi_add_handle(m_curl_multi, easy);
-    VERIFY(result == CURLM_OK);
+            auto result = curl_multi_add_handle(m_curl_multi, easy);
+            VERIFY(result == CURLM_OK);
 
-    m_active_requests.set(request_id, move(request));
+            m_active_requests.set(request_id, move(request));
+        });
 }
 
 static Requests::NetworkError map_curl_code_to_network_error(CURLcode const& code)
@@ -600,12 +607,12 @@ void ConnectionFromClient::ensure_connection(URL::URL const& url, ::RequestServe
     }
 
     if (cache_level == CacheLevel::ResolveOnly) {
-        [[maybe_unused]] auto promise = m_resolver->dns.lookup(url.serialized_host().value().to_byte_string(), DNS::Messages::Class::IN, Array { DNS::Messages::ResourceType::A, DNS::Messages::ResourceType::AAAA }.span());
+        [[maybe_unused]] auto promise = m_resolver->dns.lookup(url.serialized_host().to_byte_string(), DNS::Messages::Class::IN, Array { DNS::Messages::ResourceType::A, DNS::Messages::ResourceType::AAAA }.span());
         if constexpr (REQUESTSERVER_DEBUG) {
             Core::ElapsedTimer timer;
             timer.start();
             promise->when_resolved([url, timer](auto const& results) -> ErrorOr<void> {
-                dbgln("ensure_connection::ResolveOnly({}) OK {} entrie(s) in {}ms", url, results->cached_addresses().size(), timer.elapsed());
+                dbgln("ensure_connection::ResolveOnly({}) OK {} entrie(s) in {}ms", url, results->cached_addresses().size(), timer.elapsed_milliseconds());
                 return {};
             });
             promise->when_rejected([url](auto const&) { dbgln("ensure_connection::ResolveOnly({}) rejected", url); });

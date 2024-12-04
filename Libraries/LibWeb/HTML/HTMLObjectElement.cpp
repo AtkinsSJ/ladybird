@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, Andreas Kling <andreas@ladybird.org>
+ * Copyright (c) 2020-2024, Andreas Kling <andreas@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -21,6 +21,7 @@
 #include <LibWeb/HTML/Parser/HTMLParser.h>
 #include <LibWeb/HTML/PotentialCORSRequest.h>
 #include <LibWeb/Layout/ImageBox.h>
+#include <LibWeb/Layout/NavigableContainerViewport.h>
 #include <LibWeb/Loader/ResourceLoader.h>
 #include <LibWeb/MimeSniff/MimeType.h>
 #include <LibWeb/MimeSniff/Resource.h>
@@ -32,12 +33,14 @@ GC_DEFINE_ALLOCATOR(HTMLObjectElement);
 HTMLObjectElement::HTMLObjectElement(DOM::Document& document, DOM::QualifiedName qualified_name)
     : NavigableContainer(document, move(qualified_name))
 {
+    // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-object-element:potentially-delays-the-load-event
+    set_potentially_delays_the_load_event(true);
+
     // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-object-element
     // Whenever one of the following conditions occur:
     // - the element is created,
     // ...the user agent must queue an element task on the DOM manipulation task source given
     // the object element to run the following steps to (re)determine what the object element represents.
-    // This task being queued or actively running must delay the load event of the element's node document.
     queue_element_task_to_run_object_representation_steps();
 }
 
@@ -88,7 +91,7 @@ void HTMLObjectElement::apply_presentational_hints(CSS::StyleProperties& style) 
             else if (value.equals_ignoring_ascii_case("middle"sv))
                 style.set_property(CSS::PropertyID::TextAlign, CSS::CSSKeywordValue::create(CSS::Keyword::Middle));
         } else if (name == HTML::AttributeNames::border) {
-            if (auto parsed_value = parse_non_negative_integer(value); parsed_value.has_value() && *parsed_value > 0) {
+            if (auto parsed_value = parse_non_negative_integer(value); parsed_value.has_value()) {
                 auto width_style_value = CSS::LengthStyleValue::create(CSS::Length::make_px(*parsed_value));
                 style.set_property(CSS::PropertyID::BorderTopWidth, width_style_value);
                 style.set_property(CSS::PropertyID::BorderRightWidth, width_style_value);
@@ -143,8 +146,7 @@ GC::Ptr<Layout::Node> HTMLObjectElement::create_layout_node(CSS::StyleProperties
     case Representation::Children:
         return NavigableContainer::create_layout_node(move(style));
     case Representation::NestedBrowsingContext:
-        // FIXME: Actually paint the nested browsing context's document, similar to how iframes are painted with FrameBox and NestedBrowsingContextPaintable.
-        return nullptr;
+        return heap().allocate<Layout::NavigableContainerViewport>(document(), *this, move(style));
     case Representation::Image:
         if (image_data())
             return heap().allocate<Layout::ImageBox>(document(), *this, move(style), *this);
@@ -212,6 +214,7 @@ void HTMLObjectElement::queue_element_task_to_run_object_representation_steps()
             // 5. Fetch request, with processResponseEndOfBody given response res set to finalize and report timing with res, the element's node document's relevant global object, and "object".
             //    Fetching the resource must delay the load event of the element's node document until the task that is queued by the networking task source once the resource has been fetched (defined next) has been run.
             set_resource(ResourceLoader::the().load_resource(Resource::Type::Generic, request));
+            m_document_load_event_delayer_for_resource_load.emplace(document());
 
             // 6. If the resource is not yet available (e.g. because the resource was not available in the cache, so that loading the resource required making a request over the network), then jump to the step below labeled fallback. The task that is queued by the networking task source once the resource is available must restart this algorithm from this step. Resources can load incrementally; user agents may opt to consider a resource "available" whenever enough data has been obtained to begin processing the resource.
 
@@ -231,11 +234,16 @@ void HTMLObjectElement::resource_did_fail()
     // 4.7. If the load failed (e.g. there was an HTTP 404 error, there was a DNS error), fire an event named error at the element, then jump to the step below labeled fallback.
     dispatch_event(DOM::Event::create(realm(), HTML::EventNames::error));
     run_object_representation_fallback_steps();
+    m_document_load_event_delayer_for_resource_load.clear();
 }
 
 // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#object-type-detection
 void HTMLObjectElement::resource_did_load()
 {
+    ScopeGuard load_event_delayer_guard = [&] {
+        m_document_load_event_delayer_for_resource_load.clear();
+    };
+
     // 4.8. Determine the resource type, as follows:
 
     // 1. Let the resource type be unknown.

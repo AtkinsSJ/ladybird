@@ -183,8 +183,10 @@ static GC::Ref<HTML::BrowsingContext> obtain_a_browsing_context_to_use_for_a_nav
         VERIFY(navigation_coop.value == HTML::OpenerPolicyValue::UnsafeNone);
 
         // 2. Assert: newBrowsingContext's popup sandboxing flag set is empty.
+        VERIFY(is_empty(new_browsing_context->popup_sandboxing_flag_set()));
 
         // 3. Set newBrowsingContext's popup sandboxing flag set to a clone of sandboxFlags.
+        new_browsing_context->set_popup_sandboxing_flag_set(sandbox_flags);
     }
 
     // 6. Return newBrowsingContext.
@@ -706,14 +708,14 @@ WebIDL::ExceptionOr<void> Document::close()
     if (!m_parser)
         return {};
 
-    // FIXME: 4. Insert an explicit "EOF" character at the end of the parser's input stream.
+    // 4. Insert an explicit "EOF" character at the end of the parser's input stream.
     m_parser->tokenizer().insert_eof();
 
     // 5. If there is a pending parsing-blocking script, then return.
     if (pending_parsing_blocking_script())
         return {};
 
-    // FIXME: 6. Run the tokenizer, processing resulting tokens as they are emitted, and stopping when the tokenizer reaches the explicit "EOF" character or spins the event loop.
+    // 6. Run the tokenizer, processing resulting tokens as they are emitted, and stopping when the tokenizer reaches the explicit "EOF" character or spins the event loop.
     m_parser->run();
 
     // AD-HOC: This ensures that a load event is fired if the node navigable's container is an iframe.
@@ -3192,7 +3194,7 @@ String Document::domain() const
         return String {};
 
     // 3. Return effectiveDomain, serialized.
-    return MUST(URL::Parser::serialize_host(effective_domain.release_value()));
+    return effective_domain->serialize();
 }
 
 void Document::set_domain(String const& domain)
@@ -3213,6 +3215,11 @@ Optional<String> Document::navigation_id() const
 HTML::SandboxingFlagSet Document::active_sandboxing_flag_set() const
 {
     return m_active_sandboxing_flag_set;
+}
+
+void Document::set_active_sandboxing_flag_set(HTML::SandboxingFlagSet sandboxing_flag_set)
+{
+    m_active_sandboxing_flag_set = sandboxing_flag_set;
 }
 
 HTML::PolicyContainer Document::policy_container() const
@@ -4388,7 +4395,7 @@ void Document::restore_the_history_object_state(GC::Ref<HTML::SessionHistoryEntr
 
     // 2. Let state be StructuredDeserialize(entry's classic history API state, targetRealm). If this throws an exception, catch it and let state be null.
     // 3. Set document's history object's state to state.
-    auto state_or_error = HTML::structured_deserialize(target_realm.vm(), entry->classic_history_api_state(), target_realm, {});
+    auto state_or_error = HTML::structured_deserialize(target_realm.vm(), entry->classic_history_api_state(), target_realm);
     if (state_or_error.is_error())
         m_history->set_state(JS::js_null());
     else
@@ -5068,48 +5075,6 @@ JS::Value Document::named_item_value(FlyString const& name) const
     return HTMLCollection::create(*const_cast<Document*>(this), HTMLCollection::Scope::Descendants, [name](auto& element) {
         return is_named_element_with_name(element, name);
     });
-}
-
-// https://w3c.github.io/editing/docs/execCommand/#execcommand()
-bool Document::exec_command(String const& command, bool show_ui, String const& value)
-{
-    dbgln("FIXME: document.execCommand(\"{}\", {}, \"{}\")", command, show_ui, value);
-    return false;
-}
-
-// https://w3c.github.io/editing/docs/execCommand/#querycommandenabled()
-bool Document::query_command_enabled(String const& command)
-{
-    dbgln("FIXME: document.queryCommandEnabled(\"{}\")", command);
-    return false;
-}
-
-// https://w3c.github.io/editing/docs/execCommand/#querycommandindeterm()
-bool Document::query_command_indeterm(String const& command)
-{
-    dbgln("FIXME: document.queryCommandIndeterm(\"{}\")", command);
-    return false;
-}
-
-// https://w3c.github.io/editing/docs/execCommand/#querycommandstate()
-bool Document::query_command_state(String const& command)
-{
-    dbgln("FIXME: document.queryCommandState(\"{}\")", command);
-    return false;
-}
-
-// https://w3c.github.io/editing/docs/execCommand/#querycommandsupported()
-bool Document::query_command_supported(String const& command)
-{
-    dbgln("FIXME: document.queryCommandSupported(\"{}\")", command);
-    return false;
-}
-
-// https://w3c.github.io/editing/docs/execCommand/#querycommandvalue()
-String Document::query_command_value(String const& command)
-{
-    dbgln("FIXME: document.queryCommandValue(\"{}\")", command);
-    return String {};
 }
 
 // https://drafts.csswg.org/resize-observer-1/#calculate-depth-for-node

@@ -125,8 +125,14 @@ public:
     WebIDL::Long min_length() const;
     WebIDL::ExceptionOr<void> set_min_length(WebIDL::Long);
 
-    unsigned size() const;
-    WebIDL::ExceptionOr<void> set_size(unsigned value);
+    WebIDL::UnsignedLong size() const;
+    WebIDL::ExceptionOr<void> set_size(WebIDL::UnsignedLong value);
+
+    WebIDL::UnsignedLong height() const;
+    WebIDL::ExceptionOr<void> set_height(WebIDL::UnsignedLong value);
+
+    WebIDL::UnsignedLong width() const;
+    WebIDL::ExceptionOr<void> set_width(WebIDL::UnsignedLong value);
 
     struct SelectedCoordinate {
         int x { 0 };

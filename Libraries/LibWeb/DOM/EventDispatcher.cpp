@@ -31,7 +31,7 @@
 namespace Web::DOM {
 
 // https://dom.spec.whatwg.org/#concept-event-listener-inner-invoke
-bool EventDispatcher::inner_invoke(Event& event, Vector<GC::Root<DOM::DOMEventListener>>& listeners, Event::Phase phase, bool invocation_target_in_shadow_tree)
+bool EventDispatcher::inner_invoke(Event& event, Vector<GC::Root<DOM::DOMEventListener>>& listeners, Event::Phase phase, bool invocation_target_in_shadow_tree, bool& legacy_output_did_listeners_throw)
 {
     // 1. Let found be false.
     bool found = false;
@@ -84,7 +84,9 @@ bool EventDispatcher::inner_invoke(Event& event, Vector<GC::Root<DOM::DOMEventLi
         if (listener->passive)
             event.set_in_passive_listener(true);
 
-        // 10. Call a user object’s operation with listener’s callback, "handleEvent", « event », and event’s currentTarget attribute value. If this throws an exception, then:
+        // FIXME: 10. If global is a Window object, then record timing info for event listener given event and listener.
+
+        // 11. Call a user object’s operation with listener’s callback, "handleEvent", « event », and event’s currentTarget attribute value.
         // FIXME: These should be wrapped for us in call_user_object_operation, but it currently doesn't do that.
         auto* this_value = event.current_target().ptr();
         auto* wrapped_event = &event;
@@ -97,21 +99,22 @@ bool EventDispatcher::inner_invoke(Event& event, Vector<GC::Root<DOM::DOMEventLi
             VERIFY(window_or_worker);
             window_or_worker->report_an_exception(*result.release_error().value());
 
-            // FIXME: 2. Set legacyOutputDidListenersThrowFlag if given. (Only used by IndexedDB currently)
+            // 2. Set legacyOutputDidListenersThrowFlag if given. (Only used by IndexedDB currently)
+            legacy_output_did_listeners_throw = true;
         }
 
-        // 11. Unset event’s in passive listener flag.
+        // 12. Unset event’s in passive listener flag.
         event.set_in_passive_listener(false);
 
-        // 12. If global is a Window object, then set global’s current event to currentEvent.
+        // 13. If global is a Window object, then set global’s current event to currentEvent.
         if (is<HTML::Window>(global)) {
             auto& window = verify_cast<HTML::Window>(global);
             window.set_current_event(current_event);
         }
 
-        // 13. If event’s stop immediate propagation flag is set, then return found.
+        // 14. If event’s stop immediate propagation flag is set, then break.
         if (event.should_stop_immediate_propagation())
-            return found;
+            break;
     }
 
     // 3. Return found.
@@ -119,7 +122,7 @@ bool EventDispatcher::inner_invoke(Event& event, Vector<GC::Root<DOM::DOMEventLi
 }
 
 // https://dom.spec.whatwg.org/#concept-event-listener-invoke
-void EventDispatcher::invoke(Event::PathEntry& struct_, Event& event, Event::Phase phase)
+void EventDispatcher::invoke(Event::PathEntry& struct_, Event& event, Event::Phase phase, bool& legacy_output_did_listeners_throw)
 {
     auto last_valid_shadow_adjusted_target = event.path().last_matching([&struct_](auto& entry) {
         return entry.index <= struct_.index && entry.shadow_adjusted_target;
@@ -152,7 +155,7 @@ void EventDispatcher::invoke(Event::PathEntry& struct_, Event& event, Event::Pha
     bool invocation_target_in_shadow_tree = struct_.invocation_target_in_shadow_tree;
 
     // 8. Let found be the result of running inner invoke with event, listeners, phase, invocationTargetInShadowTree, and legacyOutputDidListenersThrowFlag if given.
-    bool found = inner_invoke(event, listeners, phase, invocation_target_in_shadow_tree);
+    bool found = inner_invoke(event, listeners, phase, invocation_target_in_shadow_tree, legacy_output_did_listeners_throw);
 
     // 9. If found is false and event’s isTrusted attribute is true, then:
     if (!found && event.is_trusted()) {
@@ -173,7 +176,7 @@ void EventDispatcher::invoke(Event::PathEntry& struct_, Event& event, Event::Pha
             return;
 
         // 3. Inner invoke with event, listeners, phase, invocationTargetInShadowTree, and legacyOutputDidListenersThrowFlag if given.
-        inner_invoke(event, listeners, phase, invocation_target_in_shadow_tree);
+        inner_invoke(event, listeners, phase, invocation_target_in_shadow_tree, legacy_output_did_listeners_throw);
 
         // 4. Set event’s type attribute value to originalEventType.
         event.set_type(original_event_type);
@@ -182,6 +185,13 @@ void EventDispatcher::invoke(Event::PathEntry& struct_, Event& event, Event::Pha
 
 // https://dom.spec.whatwg.org/#concept-event-dispatch
 bool EventDispatcher::dispatch(GC::Ref<EventTarget> target, Event& event, bool legacy_target_override)
+{
+    bool legacy_output_did_listeners_throw = false;
+    return dispatch(target, event, legacy_target_override, legacy_output_did_listeners_throw);
+}
+
+// https://dom.spec.whatwg.org/#concept-event-dispatch
+bool EventDispatcher::dispatch(GC::Ref<EventTarget> target, Event& event, bool legacy_target_override, bool& legacy_output_did_listeners_throw)
 {
     // 1. Set event’s dispatch flag.
     event.set_dispatched(true);
@@ -349,7 +359,7 @@ bool EventDispatcher::dispatch(GC::Ref<EventTarget> target, Event& event, bool l
                 event.set_phase(Event::Phase::CapturingPhase);
 
             // 3. Invoke with struct, event, "capturing", and legacyOutputDidListenersThrowFlag if given.
-            invoke(entry, event, Event::Phase::CapturingPhase);
+            invoke(entry, event, Event::Phase::CapturingPhase, legacy_output_did_listeners_throw);
         }
 
         // 14. For each struct in event’s path:
@@ -369,7 +379,7 @@ bool EventDispatcher::dispatch(GC::Ref<EventTarget> target, Event& event, bool l
             }
 
             // 3. Invoke with struct, event, "bubbling", and legacyOutputDidListenersThrowFlag if given.
-            invoke(entry, event, Event::Phase::BubblingPhase);
+            invoke(entry, event, Event::Phase::BubblingPhase, legacy_output_did_listeners_throw);
         }
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023, Andreas Kling <andreas@ladybird.org>
+ * Copyright (c) 2018-2024, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2024, Aliaksandr Kalenik <kalenik.aliaksandr@gmail.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
@@ -11,7 +11,9 @@
 #include <LibWeb/Bindings/HTMLImageElementPrototype.h>
 #include <LibWeb/CSS/Parser/Parser.h>
 #include <LibWeb/CSS/StyleComputer.h>
+#include <LibWeb/CSS/StyleValues/CSSKeywordValue.h>
 #include <LibWeb/CSS/StyleValues/DisplayStyleValue.h>
+#include <LibWeb/CSS/StyleValues/LengthStyleValue.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Event.h>
 #include <LibWeb/Fetch/Fetching/Fetching.h>
@@ -26,6 +28,7 @@
 #include <LibWeb/HTML/HTMLSourceElement.h>
 #include <LibWeb/HTML/ImageRequest.h>
 #include <LibWeb/HTML/ListOfAvailableImages.h>
+#include <LibWeb/HTML/Numbers.h>
 #include <LibWeb/HTML/Parser/HTMLParser.h>
 #include <LibWeb/HTML/PotentialCORSRequest.h>
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
@@ -92,6 +95,20 @@ void HTMLImageElement::apply_presentational_hints(CSS::StyleProperties& style) c
                 style.set_property(CSS::PropertyID::MarginTop, *parsed_value);
                 style.set_property(CSS::PropertyID::MarginBottom, *parsed_value);
             }
+        } else if (name == HTML::AttributeNames::border) {
+            if (auto parsed_value = parse_non_negative_integer(value); parsed_value.has_value()) {
+                auto width_value = CSS::LengthStyleValue::create(CSS::Length::make_px(*parsed_value));
+                style.set_property(CSS::PropertyID::BorderTopWidth, width_value);
+                style.set_property(CSS::PropertyID::BorderRightWidth, width_value);
+                style.set_property(CSS::PropertyID::BorderBottomWidth, width_value);
+                style.set_property(CSS::PropertyID::BorderLeftWidth, width_value);
+
+                auto solid_value = CSS::CSSKeywordValue::create(CSS::Keyword::Solid);
+                style.set_property(CSS::PropertyID::BorderTopStyle, solid_value);
+                style.set_property(CSS::PropertyID::BorderRightStyle, solid_value);
+                style.set_property(CSS::PropertyID::BorderBottomStyle, solid_value);
+                style.set_property(CSS::PropertyID::BorderLeftStyle, solid_value);
+            }
         }
     });
 }
@@ -109,6 +126,11 @@ void HTMLImageElement::form_associated_element_attribute_changed(FlyString const
     if (name == HTML::AttributeNames::alt) {
         if (layout_node())
             did_update_alt_text(verify_cast<Layout::ImageBox>(*layout_node()));
+    }
+
+    if (name == HTML::AttributeNames::decoding) {
+        if (value.has_value() && (value->equals_ignoring_ascii_case("sync"sv) || value->equals_ignoring_ascii_case("async"sv)))
+            dbgln("FIXME: HTMLImageElement.decoding = '{}' is not implemented yet", value->to_ascii_lowercase());
     }
 }
 
@@ -168,7 +190,7 @@ void HTMLImageElement::set_visible_in_viewport(bool)
 }
 
 // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-width
-unsigned HTMLImageElement::width() const
+WebIDL::UnsignedLong HTMLImageElement::width() const
 {
     const_cast<DOM::Document&>(document()).update_layout();
 
@@ -176,9 +198,9 @@ unsigned HTMLImageElement::width() const
     if (auto* paintable_box = this->paintable_box())
         return paintable_box->content_width().to_int();
 
-    // NOTE: This step seems to not be in the spec, but all browsers do it.
+    // On setting [the width or height IDL attribute], they must act as if they reflected the respective content attributes of the same name.
     if (auto width_attr = get_attribute(HTML::AttributeNames::width); width_attr.has_value()) {
-        if (auto converted = width_attr->to_number<unsigned>(); converted.has_value())
+        if (auto converted = parse_non_negative_integer(*width_attr); converted.has_value() && *converted <= 2147483647)
             return *converted;
     }
 
@@ -191,13 +213,15 @@ unsigned HTMLImageElement::width() const
     return 0;
 }
 
-WebIDL::ExceptionOr<void> HTMLImageElement::set_width(unsigned width)
+WebIDL::ExceptionOr<void> HTMLImageElement::set_width(WebIDL::UnsignedLong width)
 {
+    if (width > 2147483647)
+        width = 0;
     return set_attribute(HTML::AttributeNames::width, String::number(width));
 }
 
 // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-height
-unsigned HTMLImageElement::height() const
+WebIDL::UnsignedLong HTMLImageElement::height() const
 {
     const_cast<DOM::Document&>(document()).update_layout();
 
@@ -205,9 +229,9 @@ unsigned HTMLImageElement::height() const
     if (auto* paintable_box = this->paintable_box())
         return paintable_box->content_height().to_int();
 
-    // NOTE: This step seems to not be in the spec, but all browsers do it.
+    // On setting [the width or height IDL attribute], they must act as if they reflected the respective content attributes of the same name.
     if (auto height_attr = get_attribute(HTML::AttributeNames::height); height_attr.has_value()) {
-        if (auto converted = height_attr->to_number<unsigned>(); converted.has_value())
+        if (auto converted = parse_non_negative_integer(*height_attr); converted.has_value() && *converted <= 2147483647)
             return *converted;
     }
 
@@ -220,8 +244,10 @@ unsigned HTMLImageElement::height() const
     return 0;
 }
 
-WebIDL::ExceptionOr<void> HTMLImageElement::set_height(unsigned height)
+WebIDL::ExceptionOr<void> HTMLImageElement::set_height(WebIDL::UnsignedLong height)
 {
+    if (height > 2147483647)
+        height = 0;
     return set_attribute(HTML::AttributeNames::height, String::number(height));
 }
 
@@ -1152,32 +1178,6 @@ void HTMLImageElement::animate()
 
     if (paintable())
         paintable()->set_needs_display();
-}
-
-StringView HTMLImageElement::decoding() const
-{
-    switch (m_decoding_hint) {
-    case ImageDecodingHint::Sync:
-        return "sync"sv;
-    case ImageDecodingHint::Async:
-        return "async"sv;
-    case ImageDecodingHint::Auto:
-        return "auto"sv;
-    default:
-        VERIFY_NOT_REACHED();
-    }
-}
-
-void HTMLImageElement::set_decoding(String decoding)
-{
-    if (decoding == "sync"sv) {
-        dbgln("FIXME: HTMLImageElement.decoding = 'sync' is not implemented yet");
-        m_decoding_hint = ImageDecodingHint::Sync;
-    } else if (decoding == "async"sv) {
-        dbgln("FIXME: HTMLImageElement.decoding = 'async' is not implemented yet");
-        m_decoding_hint = ImageDecodingHint::Async;
-    } else
-        m_decoding_hint = ImageDecodingHint::Auto;
 }
 
 bool HTMLImageElement::allows_auto_sizes() const

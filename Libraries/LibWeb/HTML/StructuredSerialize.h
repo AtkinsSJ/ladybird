@@ -13,6 +13,8 @@
 #include <AK/Vector.h>
 #include <LibIPC/Forward.h>
 #include <LibJS/Forward.h>
+#include <LibWeb/Forward.h>
+#include <LibWeb/HTML/StructuredSerializeTypes.h>
 #include <LibWeb/WebIDL/ExceptionOr.h>
 
 // Structured serialize is an entirely different format from IPC because:
@@ -21,10 +23,6 @@
 // - It is restricted to JS values
 
 namespace Web::HTML {
-
-using SerializationRecord = Vector<u32>;
-using SerializationMemory = HashMap<GC::Root<JS::Value>, u32>;
-using DeserializationMemory = GC::MarkedVector<JS::Value>;
 
 struct TransferDataHolder {
     Vector<u8> data;
@@ -54,7 +52,7 @@ WebIDL::ExceptionOr<SerializationRecord> structured_serialize(JS::VM& vm, JS::Va
 WebIDL::ExceptionOr<SerializationRecord> structured_serialize_for_storage(JS::VM& vm, JS::Value);
 WebIDL::ExceptionOr<SerializationRecord> structured_serialize_internal(JS::VM& vm, JS::Value, bool for_storage, SerializationMemory&);
 
-WebIDL::ExceptionOr<JS::Value> structured_deserialize(JS::VM& vm, SerializationRecord const& serialized, JS::Realm& target_realm, Optional<DeserializationMemory>);
+WebIDL::ExceptionOr<JS::Value> structured_deserialize(JS::VM& vm, SerializationRecord const& serialized, JS::Realm& target_realm, Optional<DeserializationMemory> = {});
 WebIDL::ExceptionOr<DeserializedRecord> structured_deserialize_internal(JS::VM& vm, ReadonlySpan<u32> const& serialized, JS::Realm& target_realm, DeserializationMemory& memory, Optional<size_t> position = {});
 
 void serialize_boolean_primitive(SerializationRecord& serialized, JS::Value& value);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022, Andreas Kling <andreas@ladybird.org>
+ * Copyright (c) 2018-2024, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2020-2021, the SerenityOS developers.
  * Copyright (c) 2021-2024, Sam Atkins <sam@ladybird.org>
  * Copyright (c) 2021, Tobias Christiansen <tobyase@serenityos.org>
@@ -68,6 +68,7 @@
 #include <LibWeb/CSS/StyleValues/RectStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ResolutionStyleValue.h>
 #include <LibWeb/CSS/StyleValues/RotationStyleValue.h>
+#include <LibWeb/CSS/StyleValues/ScaleStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ScrollbarGutterStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ShadowStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ShorthandStyleValue.h>
@@ -76,6 +77,7 @@
 #include <LibWeb/CSS/StyleValues/TimeStyleValue.h>
 #include <LibWeb/CSS/StyleValues/TransformationStyleValue.h>
 #include <LibWeb/CSS/StyleValues/TransitionStyleValue.h>
+#include <LibWeb/CSS/StyleValues/TranslationStyleValue.h>
 #include <LibWeb/CSS/StyleValues/URLStyleValue.h>
 #include <LibWeb/CSS/StyleValues/UnresolvedStyleValue.h>
 #include <LibWeb/Dump.h>
@@ -702,7 +704,7 @@ ComponentValue Parser::consume_a_component_value(TokenStream<T>& input)
 
     // Process input:
     for (;;) {
-        auto& token = input.next_token();
+        auto const& token = input.next_token();
 
         // <{-token>
         // <[-token>
@@ -722,6 +724,52 @@ ComponentValue Parser::consume_a_component_value(TokenStream<T>& input)
         {
             // Consume a token from input and return the result.
             return ComponentValue { input.consume_a_token() };
+        }
+    }
+}
+
+template<>
+void Parser::consume_a_component_value_and_do_nothing<ComponentValue>(TokenStream<ComponentValue>& tokens)
+{
+    // AD-HOC: To avoid unnecessairy allocations, we explicitly define a "do nothing" variant that discards the result immediately.
+    // Note: This overload is called once tokens have already been converted into component values,
+    //       so we do not need to do the work in the more general overload.
+    (void)tokens.consume_a_token();
+}
+
+// 5.4.7. Consume a component value
+// https://drafts.csswg.org/css-syntax/#consume-component-value
+template<typename T>
+void Parser::consume_a_component_value_and_do_nothing(TokenStream<T>& input)
+{
+    // AD-HOC: To avoid unnecessairy allocations, we explicitly define a "do nothing" variant that discards the result immediately.
+    // To consume a component value from a token stream input:
+
+    // Process input:
+    for (;;) {
+        auto const& token = input.next_token();
+
+        // <{-token>
+        // <[-token>
+        // <(-token>
+        if (token.is(Token::Type::OpenCurly) || token.is(Token::Type::OpenSquare) || token.is(Token::Type::OpenParen)) {
+            // Consume a simple block from input and return the result.
+            consume_a_simple_block_and_do_nothing(input);
+            return;
+        }
+
+        // <function-token>
+        if (token.is(Token::Type::Function)) {
+            // Consume a function from input and return the result.
+            consume_a_function_and_do_nothing(input);
+            return;
+        }
+
+        // anything else
+        {
+            // Consume a token from input and return the result.
+            input.discard_a_token();
+            return;
         }
     }
 }
@@ -766,6 +814,8 @@ Vector<ComponentValue> Parser::consume_a_list_of_component_values(TokenStream<T>
         }
     }
 }
+template Vector<ComponentValue> Parser::consume_a_list_of_component_values(TokenStream<ComponentValue>& input, Optional<Token::Type> stop_token, Nested nested);
+template Vector<ComponentValue> Parser::consume_a_list_of_component_values(TokenStream<Token>& input, Optional<Token::Type> stop_token, Nested nested);
 
 // https://drafts.csswg.org/css-syntax/#consume-simple-block
 template<typename T>
@@ -774,11 +824,11 @@ SimpleBlock Parser::consume_a_simple_block(TokenStream<T>& input)
     // To consume a simple block from a token stream input:
 
     // Assert: the next token of input is <{-token>, <[-token>, or <(-token>.
-    auto& next = input.next_token();
+    auto const& next = input.next_token();
     VERIFY(next.is(Token::Type::OpenCurly) || next.is(Token::Type::OpenSquare) || next.is(Token::Type::OpenParen));
 
     // Let ending token be the mirror variant of the next token. (E.g. if it was called with <[-token>, the ending token is <]-token>.)
-    auto ending_token = ((Token)input.next_token()).mirror_variant();
+    auto ending_token = input.next_token().mirror_variant();
 
     // Let block be a new simple block with its associated token set to the next token and with its value initially set to an empty list.
     SimpleBlock block {
@@ -791,7 +841,7 @@ SimpleBlock Parser::consume_a_simple_block(TokenStream<T>& input)
 
     // Process input:
     for (;;) {
-        auto& token = input.next_token();
+        auto const& token = input.next_token();
 
         // <eof-token>
         // ending token
@@ -806,6 +856,45 @@ SimpleBlock Parser::consume_a_simple_block(TokenStream<T>& input)
         {
             // Consume a component value from input and append the result to block’s value.
             block.value.empend(move(consume_a_component_value(input)));
+        }
+    }
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-simple-block
+template<typename T>
+void Parser::consume_a_simple_block_and_do_nothing(TokenStream<T>& input)
+{
+    // AD-HOC: To avoid unnecessairy allocations, we explicitly define a "do nothing" variant that discards the result immediately.
+    // To consume a simple block from a token stream input:
+
+    // Assert: the next token of input is <{-token>, <[-token>, or <(-token>.
+    auto const& next = input.next_token();
+    VERIFY(next.is(Token::Type::OpenCurly) || next.is(Token::Type::OpenSquare) || next.is(Token::Type::OpenParen));
+
+    // Let ending token be the mirror variant of the next token. (E.g. if it was called with <[-token>, the ending token is <]-token>.)
+    auto ending_token = input.next_token().mirror_variant();
+
+    // Let block be a new simple block with its associated token set to the next token and with its value initially set to an empty list.
+
+    // Discard a token from input.
+    input.discard_a_token();
+
+    // Process input:
+    for (;;) {
+        auto const& token = input.next_token();
+
+        // <eof-token>
+        // ending token
+        if (token.is(Token::Type::EndOfFile) || token.is(ending_token)) {
+            // Discard a token from input. Return block.
+            input.discard_a_token();
+            return;
+        }
+
+        // anything else
+        {
+            // Consume a component value from input and append the result to block’s value.
+            consume_a_component_value_and_do_nothing(input);
         }
     }
 }
@@ -830,7 +919,7 @@ Function Parser::consume_a_function(TokenStream<T>& input)
 
     // Process input:
     for (;;) {
-        auto& token = input.next_token();
+        auto const& token = input.next_token();
 
         // <eof-token>
         // <)-token>
@@ -845,6 +934,40 @@ Function Parser::consume_a_function(TokenStream<T>& input)
         {
             // Consume a component value from input and append the result to function’s value.
             function.value.append(consume_a_component_value(input));
+        }
+    }
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-function
+template<typename T>
+void Parser::consume_a_function_and_do_nothing(TokenStream<T>& input)
+{
+    // AD-HOC: To avoid unnecessairy allocations, we explicitly define a "do nothing" variant that discards the result immediately.
+    // To consume a function from a token stream input:
+
+    // Assert: The next token is a <function-token>.
+    VERIFY(input.next_token().is(Token::Type::Function));
+
+    // Consume a token from input, and let function be a new function with its name equal the returned token’s value,
+    // and a value set to an empty list.
+    input.discard_a_token();
+
+    // Process input:
+    for (;;) {
+        auto const& token = input.next_token();
+
+        // <eof-token>
+        // <)-token>
+        if (token.is(Token::Type::EndOfFile) || token.is(Token::Type::CloseParen)) {
+            // Discard a token from input. Return function.
+            input.discard_a_token();
+            return;
+        }
+
+        // anything else
+        {
+            // Consume a component value from input and append the result to function’s value.
+            consume_a_component_value_and_do_nothing(input);
         }
     }
 }
@@ -997,7 +1120,7 @@ void Parser::consume_the_remnants_of_a_bad_declaration(TokenStream<T>& input, Ne
 
     // Process input:
     for (;;) {
-        auto& token = input.next_token();
+        auto const& token = input.next_token();
 
         // <eof-token>
         // <semicolon-token>
@@ -1019,7 +1142,7 @@ void Parser::consume_the_remnants_of_a_bad_declaration(TokenStream<T>& input, Ne
         // anything else
         {
             // Consume a component value from input, and do nothing.
-            (void)consume_a_component_value(input);
+            consume_a_component_value_and_do_nothing(input);
             continue;
         }
     }
@@ -3409,7 +3532,7 @@ RefPtr<CSSStyleValue> Parser::parse_color_value(TokenStream<ComponentValue>& tok
         auto color = Color::from_string(ident);
         if (color.has_value()) {
             transaction.commit();
-            return CSSColorValue::create_from_color(color.release_value());
+            return CSSColorValue::create_from_color(color.release_value(), ident);
         }
         // Otherwise, fall through to the hashless-hex-color case
     }
@@ -6035,6 +6158,11 @@ Vector<ParsedFontFace::Source> Parser::parse_font_face_src(TokenStream<T>& compo
 template Vector<ParsedFontFace::Source> Parser::parse_font_face_src(TokenStream<Token>& component_values);
 template Vector<ParsedFontFace::Source> Parser::parse_font_face_src(TokenStream<ComponentValue>& component_values);
 
+Vector<ComponentValue> Parser::parse_as_list_of_component_values()
+{
+    return parse_a_list_of_component_values(m_token_stream);
+}
+
 RefPtr<CSSStyleValue> Parser::parse_list_style_value(TokenStream<ComponentValue>& tokens)
 {
     RefPtr<CSSStyleValue> list_position;
@@ -6375,6 +6503,11 @@ RefPtr<CSSStyleValue> Parser::parse_text_decoration_line_value(TokenStream<Compo
 
     if (style_values.is_empty())
         return nullptr;
+
+    quick_sort(style_values, [](auto& left, auto& right) {
+        return *keyword_to_text_decoration_line(left->to_keyword()) < *keyword_to_text_decoration_line(right->to_keyword());
+    });
+
     return StyleValueList::create(move(style_values), StyleValueList::Separator::Space);
 }
 
@@ -6926,6 +7059,60 @@ Optional<CSS::GridSize> Parser::parse_grid_size(ComponentValue const& component_
     else if (dimension->is_flex())
         return GridSize(dimension->flex());
     return {};
+}
+
+RefPtr<CSSStyleValue> Parser::parse_translate_value(TokenStream<ComponentValue>& tokens)
+{
+    if (tokens.remaining_token_count() == 1) {
+        // "none"
+        if (auto none = parse_all_as_single_keyword_value(tokens, Keyword::None))
+            return none;
+    }
+
+    auto transaction = tokens.begin_transaction();
+
+    auto maybe_x = parse_length_percentage(tokens);
+    if (!maybe_x.has_value())
+        return nullptr;
+
+    if (!tokens.has_next_token()) {
+        transaction.commit();
+        return TranslationStyleValue::create(maybe_x.release_value(), LengthPercentage(Length::make_px(0)));
+    }
+
+    auto maybe_y = parse_length_percentage(tokens);
+    if (!maybe_y.has_value())
+        return nullptr;
+
+    transaction.commit();
+    return TranslationStyleValue::create(maybe_x.release_value(), maybe_y.release_value());
+}
+
+RefPtr<CSSStyleValue> Parser::parse_scale_value(TokenStream<ComponentValue>& tokens)
+{
+    if (tokens.remaining_token_count() == 1) {
+        // "none"
+        if (auto none = parse_all_as_single_keyword_value(tokens, Keyword::None))
+            return none;
+    }
+
+    auto transaction = tokens.begin_transaction();
+
+    auto maybe_x = parse_number_percentage(tokens);
+    if (!maybe_x.has_value())
+        return nullptr;
+
+    if (!tokens.has_next_token()) {
+        transaction.commit();
+        return ScaleStyleValue::create(maybe_x.value(), maybe_x.value());
+    }
+
+    auto maybe_y = parse_number_percentage(tokens);
+    if (!maybe_y.has_value())
+        return nullptr;
+
+    transaction.commit();
+    return ScaleStyleValue::create(maybe_x.release_value(), maybe_y.release_value());
 }
 
 Optional<CSS::GridFitContent> Parser::parse_fit_content(Vector<ComponentValue> const& component_values)
@@ -7943,6 +8130,14 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
         return ParseError::SyntaxError;
     case PropertyID::Transition:
         if (auto parsed_value = parse_transition_value(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
+    case PropertyID::Translate:
+        if (auto parsed_value = parse_translate_value(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
+    case PropertyID::Scale:
+        if (auto parsed_value = parse_scale_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
     default:

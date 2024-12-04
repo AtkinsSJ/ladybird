@@ -16,6 +16,39 @@ describe("correct behavior", () => {
             }
         }
     });
+
+    test("relative to plain date", () => {
+        const duration = new Temporal.Duration(0, 0, 0, 31);
+
+        ["2000-01-01", "2000-01-01T00:00", "2000-01-01T00:00[u-ca=iso8601]"].forEach(relativeTo => {
+            const result = duration.total({ unit: "months", relativeTo });
+            expect(result).toBe(1);
+        });
+    });
+
+    test("relative to zoned date time", () => {
+        const duration = new Temporal.Duration(0, 0, 0, 31);
+
+        [
+            "2000-01-01[UTC]",
+            "2000-01-01T00:00[UTC]",
+            "2000-01-01T00:00+00:00[UTC]",
+            "2000-01-01T00:00+00:00[UTC][u-ca=iso8601]",
+        ].forEach(relativeTo => {
+            const result = duration.total({ unit: "months", relativeTo });
+            expect(result).toBe(1);
+        });
+    });
+
+    test("match minutes", () => {
+        const duration = new Temporal.Duration(1, 0, 0, 0, 24);
+
+        const result = duration.total({
+            unit: "days",
+            relativeTo: "1970-01-01T00:00:00-00:45[Africa/Monrovia]",
+        });
+        expect(result).toBe(366);
+    });
 });
 
 describe("errors", () => {

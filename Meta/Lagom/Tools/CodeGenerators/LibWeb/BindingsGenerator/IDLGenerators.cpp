@@ -59,6 +59,11 @@ static bool is_platform_object(Type const& type)
         "FontFace"sv,
         "FormData"sv,
         "HTMLCollection"sv,
+        "IDBCursor"sv,
+        "IDBIndex"sv,
+        "IDBKeyRange"sv,
+        "IDBObjectStore"sv,
+        "IDBTransaction"sv,
         "ImageBitmap"sv,
         "ImageData"sv,
         "Instance"sv,
@@ -390,11 +395,19 @@ static void generate_to_string(SourceGenerator& scoped_generator, ParameterType 
 )~~~");
         }
 
-        scoped_generator.append(R"~~~(
+        if (parameter.type->is_nullable()) {
+            scoped_generator.append(R"~~~(
+    if (!@js_name@@js_suffix@.is_undefined()) {
+        if (!@js_name@@js_suffix@.is_null())
+            @cpp_name@ = TRY(WebIDL::@to_string@(vm, @js_name@@js_suffix@));
+    })~~~");
+        } else {
+            scoped_generator.append(R"~~~(
     if (!@js_name@@js_suffix@.is_undefined()) {
         if (!@legacy_null_to_empty_string@ || !@js_name@@js_suffix@.is_null())
             @cpp_name@ = TRY(WebIDL::@to_string@(vm, @js_name@@js_suffix@));
     })~~~");
+        }
         if (!may_be_null) {
             scoped_generator.append(R"~~~( else {
         @cpp_name@ = MUST(@string_type@::from_utf8(@parameter.optional_default_value@sv));
@@ -3829,6 +3842,22 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.setter_callback@)
     else
         MUST(impl->set_attribute(HTML::AttributeNames::@attribute.reflect_name@, String {}));
 )~~~");
+                } else if (attribute.type->name() == "unsigned long") {
+                    // The setter steps are:
+                    // FIXME: 1. If the reflected IDL attribute is limited to only positive numbers and the given value is 0, then throw an "IndexSizeError" DOMException.
+                    // 2. Let minimum be 0.
+                    // FIXME: 3. If the reflected IDL attribute is limited to only positive numbers or limited to only positive numbers with fallback, then set minimum to 1.
+                    // 4. Let newValue be minimum.
+                    // FIXME: 5. If the reflected IDL attribute has a default value, then set newValue to defaultValue.
+                    // 6. If the given value is in the range minimum to 2147483647, inclusive, then set newValue to it.
+                    // 7. Run this's set the content attribute with newValue converted to the shortest possible string representing the number as a valid non-negative integer.
+                    attribute_generator.append(R"~~~(
+    u32 minimum = 0;
+    u32 new_value = minimum;
+    if (cpp_value >= minimum && cpp_value <= 2147483647)
+        new_value = cpp_value;
+    MUST(impl->set_attribute(HTML::AttributeNames::@attribute.reflect_name@, String::number(new_value)));
+)~~~");
                 } else if (attribute.type->is_integer() && !attribute.type->is_nullable()) {
                     attribute_generator.append(R"~~~(
     MUST(impl->set_attribute(HTML::AttributeNames::@attribute.reflect_name@, String::number(cpp_value)));
@@ -3925,6 +3954,7 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.setter_callback@)
             }
         } else if (auto put_forwards_identifier = attribute.extended_attributes.get("PutForwards"sv); put_forwards_identifier.has_value()) {
             attribute_generator.set("put_forwards_identifier"sv, *put_forwards_identifier);
+            VERIFY(!put_forwards_identifier->is_empty() && !is_ascii_digit(put_forwards_identifier->byte_at(0))); // Ensure `PropertyKey`s are not Numbers.
 
             attribute_generator.append(R"~~~(
 JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.setter_callback@)
@@ -3934,7 +3964,7 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.setter_callback@)
     auto value = vm.argument(0);
 
     auto receiver = TRY(throw_dom_exception_if_needed(vm, [&]() { return impl->@attribute.cpp_name@(); }));
-    TRY(receiver->set(JS::PropertyKey { "@put_forwards_identifier@" }, value, JS::Object::ShouldThrowExceptions::Yes));
+    TRY(receiver->set(JS::PropertyKey { "@put_forwards_identifier@", JS::PropertyKey::StringMayBeNumber::No }, value, JS::Object::ShouldThrowExceptions::Yes));
 
     return JS::js_undefined();
 }
@@ -4022,7 +4052,7 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::for_each)
         generate_variable_statement(iterator_generator, "wrapped_key", interface.pair_iterator_types->get<0>(), "key", interface);
         generate_variable_statement(iterator_generator, "wrapped_value", interface.pair_iterator_types->get<1>(), "value", interface);
         iterator_generator.append(R"~~~(
-        TRY(call(vm, callback.as_function(), vm.argument(1), wrapped_value, wrapped_key, this_value));
+        TRY(JS::call(vm, callback.as_function(), vm.argument(1), wrapped_value, wrapped_key, this_value));
         return {};
     }));
 
@@ -4100,7 +4130,7 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::for_each)
 
     for (auto& entry : *set) {
         auto value = entry.key;
-        TRY(call(vm, callback.as_function(), vm.argument(1), value, value, impl));
+        TRY(JS::call(vm, callback.as_function(), vm.argument(1), value, value, impl));
     }
 
     return JS::js_undefined();
@@ -4253,43 +4283,44 @@ private:
 static void generate_using_namespace_definitions(SourceGenerator& generator)
 {
     generator.append(R"~~~(
-    // FIXME: This is a total hack until we can figure out the namespace for a given type somehow.
-    using namespace Web::Animations;
-    using namespace Web::Clipboard;
-    using namespace Web::Crypto;
-    using namespace Web::CSS;
-    using namespace Web::DOM;
-    using namespace Web::DOMParsing;
-    using namespace Web::DOMURL;
-    using namespace Web::Encoding;
-    using namespace Web::EntriesAPI;
-    using namespace Web::EventTiming;
-    using namespace Web::Fetch;
-    using namespace Web::FileAPI;
-    using namespace Web::Geometry;
-    using namespace Web::HighResolutionTime;
-    using namespace Web::HTML;
-    using namespace Web::IndexedDB;
-    using namespace Web::Internals;
-    using namespace Web::IntersectionObserver;
-    using namespace Web::MediaCapabilitiesAPI;
-    using namespace Web::MediaSourceExtensions;
-    using namespace Web::NavigationTiming;
-    using namespace Web::PerformanceTimeline;
-    using namespace Web::RequestIdleCallback;
-    using namespace Web::ResizeObserver;
-    using namespace Web::Selection;
-    using namespace Web::StorageAPI;
-    using namespace Web::Streams;
-    using namespace Web::SVG;
-    using namespace Web::UIEvents;
-    using namespace Web::UserTiming;
-    using namespace Web::WebAssembly;
-    using namespace Web::WebAudio;
-    using namespace Web::WebGL;
-    using namespace Web::WebIDL;
-    using namespace Web::WebVTT;
-    using namespace Web::XHR;
+// FIXME: This is a total hack until we can figure out the namespace for a given type somehow.
+using namespace Web::Animations;
+using namespace Web::Clipboard;
+using namespace Web::Crypto;
+using namespace Web::CSS;
+using namespace Web::DOM;
+using namespace Web::DOMParsing;
+using namespace Web::DOMURL;
+using namespace Web::Encoding;
+using namespace Web::EntriesAPI;
+using namespace Web::EventTiming;
+using namespace Web::Fetch;
+using namespace Web::FileAPI;
+using namespace Web::Geometry;
+using namespace Web::HighResolutionTime;
+using namespace Web::HTML;
+using namespace Web::IndexedDB;
+using namespace Web::Internals;
+using namespace Web::IntersectionObserver;
+using namespace Web::MediaCapabilitiesAPI;
+using namespace Web::MediaSourceExtensions;
+using namespace Web::NavigationTiming;
+using namespace Web::PerformanceTimeline;
+using namespace Web::RequestIdleCallback;
+using namespace Web::ResizeObserver;
+using namespace Web::Selection;
+using namespace Web::ServiceWorker;
+using namespace Web::StorageAPI;
+using namespace Web::Streams;
+using namespace Web::SVG;
+using namespace Web::UIEvents;
+using namespace Web::UserTiming;
+using namespace Web::WebAssembly;
+using namespace Web::WebAudio;
+using namespace Web::WebGL;
+using namespace Web::WebIDL;
+using namespace Web::WebVTT;
+using namespace Web::XHR;
 )~~~"sv);
 }
 
@@ -4513,6 +4544,8 @@ void generate_constructor_implementation(IDL::Interface const& interface, String
     generator.set("prototype_class", interface.prototype_class);
     generator.set("constructor_class", interface.constructor_class);
     generator.set("fully_qualified_name", interface.fully_qualified_name);
+    generator.set("parent_name", interface.parent_name);
+    generator.set("prototype_base_class", interface.prototype_base_class);
 
     generator.append(R"~~~(
 #include <LibIDL/Types.h>
@@ -4534,6 +4567,10 @@ void generate_constructor_implementation(IDL::Interface const& interface, String
 #include <LibWeb/WebIDL/OverloadResolution.h>
 #include <LibWeb/WebIDL/Tracing.h>
 #include <LibWeb/WebIDL/Types.h>
+
+#if __has_include(<LibWeb/Bindings/@prototype_base_class@.h>)
+#    include <LibWeb/Bindings/@prototype_base_class@.h>
+#endif
 
 )~~~");
 
@@ -4586,6 +4623,15 @@ void @constructor_class@::initialize(JS::Realm& realm)
     [[maybe_unused]] u8 default_attributes = JS::Attribute::Enumerable;
 
     Base::initialize(realm);
+)~~~");
+
+    if (interface.prototype_base_class != "ObjectPrototype") {
+        generator.append(R"~~~(
+    set_prototype(&ensure_web_constructor<@prototype_base_class@>(realm, "@parent_name@"_fly_string));
+)~~~");
+    }
+
+    generator.append(R"~~~(
     define_direct_property(vm.names.prototype, &ensure_web_prototype<@prototype_class@>(realm, "@namespaced_name@"_fly_string), 0);
     define_direct_property(vm.names.length, JS::Value(@constructor.length@), JS::Attribute::Configurable);
 

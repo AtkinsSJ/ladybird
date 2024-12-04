@@ -119,10 +119,22 @@ ErrorOr<void> encode(Encoder& encoder, URL::URL const& value)
 template<>
 ErrorOr<void> encode(Encoder& encoder, URL::Origin const& origin)
 {
-    TRY(encoder.encode<ByteString>(origin.scheme()));
-    TRY(encoder.encode(origin.host()));
-    TRY(encoder.encode(origin.port()));
+    if (origin.is_opaque()) {
+        TRY(encoder.encode(true));
+    } else {
+        TRY(encoder.encode(false));
+        TRY(encoder.encode(origin.scheme()));
+        TRY(encoder.encode(origin.host()));
+        TRY(encoder.encode(origin.port()));
+    }
 
+    return {};
+}
+
+template<>
+ErrorOr<void> encode(Encoder& encoder, URL::Host const& host)
+{
+    TRY(encoder.encode(host.value()));
     return {};
 }
 

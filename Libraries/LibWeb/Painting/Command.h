@@ -11,7 +11,6 @@
 #include <AK/SegmentedVector.h>
 #include <AK/Utf8View.h>
 #include <AK/Vector.h>
-#include <LibGfx/AntiAliasingPainter.h>
 #include <LibGfx/Color.h>
 #include <LibGfx/Forward.h>
 #include <LibGfx/Gradients.h>
@@ -27,6 +26,7 @@
 #include <LibGfx/Size.h>
 #include <LibGfx/TextAlignment.h>
 #include <LibGfx/TextLayout.h>
+#include <LibWeb/CSS/ComputedValues.h>
 #include <LibWeb/CSS/Enums.h>
 #include <LibWeb/Painting/BorderRadiiData.h>
 #include <LibWeb/Painting/BorderRadiusCornerClipper.h>
@@ -118,7 +118,6 @@ struct StackingContextTransform {
 
 struct PushStackingContext {
     float opacity;
-    CSS::ResolvedFilter filter;
     // The bounding box of the source paintable (pre-transform).
     Gfx::IntRect source_paintable_rect;
     // A translation to be applied after the stacking context has been transformed.
@@ -408,6 +407,10 @@ struct ApplyOpacity {
     float opacity;
 };
 
+struct ApplyFilters {
+    CSS::ResolvedFilter filter;
+};
+
 struct ApplyTransform {
     Gfx::FloatPoint origin;
     Gfx::FloatMatrix4x4 matrix;
@@ -463,6 +466,7 @@ using Command = Variant<
     PaintNestedDisplayList,
     PaintScrollBar,
     ApplyOpacity,
+    ApplyFilters,
     ApplyTransform,
     ApplyMaskBitmap>;
 

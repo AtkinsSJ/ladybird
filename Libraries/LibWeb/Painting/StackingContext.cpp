@@ -104,7 +104,7 @@ void StackingContext::paint_svg(PaintContext& context, PaintableBox const& paint
     paintable.apply_clip_overflow_rect(context, PaintPhase::Foreground);
     paint_node(paintable, context, PaintPhase::Background);
     paint_node(paintable, context, PaintPhase::Border);
-    SVGSVGPaintable::paint_descendants(context, paintable, phase);
+    SVGSVGPaintable::paint_svg_box(context, paintable, phase);
     paintable.clear_clip_overflow_rect(context, PaintPhase::Foreground);
 }
 
@@ -301,7 +301,6 @@ void StackingContext::paint(PaintContext& context) const
 
     DisplayListRecorder::PushStackingContextParams push_stacking_context_params {
         .opacity = opacity,
-        .filter = paintable_box().computed_values().filter(),
         .is_fixed_position = paintable_box().is_fixed_position(),
         .source_paintable_rect = source_paintable_rect,
         .transform = {
@@ -329,6 +328,11 @@ void StackingContext::paint(PaintContext& context) const
     }
     context.display_list_recorder().push_stacking_context(push_stacking_context_params);
 
+    auto const& filter = computed_values.filter();
+    if (!filter.is_none()) {
+        context.display_list_recorder().apply_filters(paintable_box().computed_values().filter());
+    }
+
     if (auto mask_image = computed_values.mask_image()) {
         auto mask_display_list = DisplayList::create();
         DisplayListRecorder display_list_recorder(*mask_display_list);
@@ -349,6 +353,11 @@ void StackingContext::paint(PaintContext& context) const
     }
 
     paint_internal(context);
+
+    if (!filter.is_none()) {
+        context.display_list_recorder().restore();
+    }
+
     context.display_list_recorder().pop_stacking_context();
     if (paintable_box().scroll_frame_id().has_value()) {
         context.display_list_recorder().pop_scroll_frame_id();

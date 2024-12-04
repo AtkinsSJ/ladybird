@@ -38,7 +38,28 @@ ValueComparingRefPtr<CSSStyleValue const> ShorthandStyleValue::longhand(Property
 
 String ShorthandStyleValue::to_string() const
 {
-    // Special-cases first
+    // If all the longhands are the same CSS-wide keyword, just return that once.
+    Optional<Keyword> built_in_keyword;
+    bool all_same_keyword = true;
+    for (auto& value : m_properties.values) {
+        if (!value->is_css_wide_keyword()) {
+            all_same_keyword = false;
+            break;
+        }
+        auto keyword = value->to_keyword();
+        if (!built_in_keyword.has_value()) {
+            built_in_keyword = keyword;
+            continue;
+        }
+        if (built_in_keyword != keyword) {
+            all_same_keyword = false;
+            break;
+        }
+    }
+    if (all_same_keyword && built_in_keyword.has_value())
+        return m_properties.values.first()->to_string();
+
+    // Then special cases
     switch (m_properties.shorthand_property) {
     case PropertyID::Background: {
         auto color = longhand(PropertyID::BackgroundColor);
@@ -183,8 +204,14 @@ String ShorthandStyleValue::to_string() const
     }
     case PropertyID::ListStyle:
         return MUST(String::formatted("{} {} {}", longhand(PropertyID::ListStylePosition)->to_string(), longhand(PropertyID::ListStyleImage)->to_string(), longhand(PropertyID::ListStyleType)->to_string()));
-    case PropertyID::Overflow:
-        return MUST(String::formatted("{} {}", longhand(PropertyID::OverflowX)->to_string(), longhand(PropertyID::OverflowY)->to_string()));
+    case PropertyID::Overflow: {
+        auto overflow_x = longhand(PropertyID::OverflowX);
+        auto overflow_y = longhand(PropertyID::OverflowY);
+        if (overflow_x == overflow_y)
+            return overflow_x->to_string();
+
+        return MUST(String::formatted("{} {}", overflow_x->to_string(), overflow_y->to_string()));
+    }
     case PropertyID::PlaceContent: {
         auto align_content = longhand(PropertyID::AlignContent)->to_string();
         auto justify_content = longhand(PropertyID::JustifyContent)->to_string();
@@ -206,8 +233,29 @@ String ShorthandStyleValue::to_string() const
             return align_self;
         return MUST(String::formatted("{} {}", align_self, justify_self));
     }
-    case PropertyID::TextDecoration:
-        return MUST(String::formatted("{} {} {} {}", longhand(PropertyID::TextDecorationLine)->to_string(), longhand(PropertyID::TextDecorationThickness)->to_string(), longhand(PropertyID::TextDecorationStyle)->to_string(), longhand(PropertyID::TextDecorationColor)->to_string()));
+    case PropertyID::TextDecoration: {
+        // The rule here seems to be, only print what's different from the default value,
+        // but if they're all default, print the line.
+        StringBuilder builder;
+        auto append_if_non_default = [&](PropertyID property_id) {
+            auto value = longhand(property_id);
+            if (!value->equals(property_initial_value({}, property_id))) {
+                if (!builder.is_empty())
+                    builder.append(' ');
+                builder.append(value->to_string());
+            }
+        };
+
+        append_if_non_default(PropertyID::TextDecorationLine);
+        append_if_non_default(PropertyID::TextDecorationThickness);
+        append_if_non_default(PropertyID::TextDecorationStyle);
+        append_if_non_default(PropertyID::TextDecorationColor);
+
+        if (builder.is_empty())
+            return longhand(PropertyID::TextDecorationLine)->to_string();
+
+        return builder.to_string_without_validation();
+    }
     default:
         StringBuilder builder;
         auto first = true;

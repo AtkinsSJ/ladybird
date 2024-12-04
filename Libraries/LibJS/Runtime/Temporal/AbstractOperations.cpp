@@ -18,7 +18,10 @@
 #include <LibJS/Runtime/Temporal/PlainDate.h>
 #include <LibJS/Runtime/Temporal/PlainDateTime.h>
 #include <LibJS/Runtime/Temporal/PlainMonthDay.h>
+#include <LibJS/Runtime/Temporal/PlainTime.h>
+#include <LibJS/Runtime/Temporal/PlainYearMonth.h>
 #include <LibJS/Runtime/Temporal/TimeZone.h>
+#include <LibJS/Runtime/Temporal/ZonedDateTime.h>
 
 namespace JS::Temporal {
 
@@ -71,6 +74,19 @@ double epoch_days_to_epoch_ms(double day, double time)
     return day * JS::ms_per_day + time;
 }
 
+// 13.4 CheckISODaysRange ( isoDate ), https://tc39.es/proposal-temporal/#sec-checkisodaysrange
+ThrowCompletionOr<void> check_iso_days_range(VM& vm, ISODate iso_date)
+{
+    // 1. If abs(ISODateToEpochDays(isoDate.[[Year]], isoDate.[[Month]] - 1, isoDate.[[Day]])) > 10**8, then
+    if (fabs(iso_date_to_epoch_days(iso_date.year, iso_date.month - 1, iso_date.day)) > 100'000'000) {
+        // a. Throw a RangeError exception.
+        return vm.throw_completion<RangeError>(ErrorType::TemporalInvalidISODate);
+    }
+
+    // 2. Return unused.
+    return {};
+}
+
 // 13.6 GetTemporalOverflowOption ( options ), https://tc39.es/proposal-temporal/#sec-temporal-gettemporaloverflowoption
 ThrowCompletionOr<Overflow> get_temporal_overflow_option(VM& vm, Object const& options)
 {
@@ -85,26 +101,163 @@ ThrowCompletionOr<Overflow> get_temporal_overflow_option(VM& vm, Object const& o
     return Overflow::Reject;
 }
 
+// 13.7 GetTemporalDisambiguationOption ( options ), https://tc39.es/proposal-temporal/#sec-temporal-gettemporaldisambiguationoption
+ThrowCompletionOr<Disambiguation> get_temporal_disambiguation_option(VM& vm, Object const& options)
+{
+    // 1. Let stringValue be ? GetOption(options, "disambiguation", STRING, « "compatible", "earlier", "later", "reject" », "compatible").
+    auto string_value = TRY(get_option(vm, options, vm.names.disambiguation, OptionType::String, { "compatible"sv, "earlier"sv, "later"sv, "reject"sv }, "compatible"sv));
+    auto string_view = string_value.as_string().utf8_string_view();
+
+    // 2. If stringValue is "compatible", return COMPATIBLE.
+    if (string_view == "compatible"sv)
+        return Disambiguation::Compatible;
+
+    // 3. If stringValue is "earlier", return EARLIER.
+    if (string_view == "earlier"sv)
+        return Disambiguation::Earlier;
+
+    // 4. If stringValue is "later", return LATER.
+    if (string_view == "later"sv)
+        return Disambiguation::Later;
+
+    // 5. Return REJECT.
+    return Disambiguation::Reject;
+}
+
+// 13.8 NegateRoundingMode ( roundingMode ), https://tc39.es/proposal-temporal/#sec-temporal-negateroundingmode
+RoundingMode negate_rounding_mode(RoundingMode rounding_mode)
+{
+    // 1. If roundingMode is CEIL, return FLOOR.
+    if (rounding_mode == RoundingMode::Ceil)
+        return RoundingMode::Floor;
+
+    // 2. If roundingMode is FLOOR, return CEIL.
+    if (rounding_mode == RoundingMode::Floor)
+        return RoundingMode::Ceil;
+
+    // 3. If roundingMode is HALF-CEIL, return HALF-FLOOR.
+    if (rounding_mode == RoundingMode::HalfCeil)
+        return RoundingMode::HalfFloor;
+
+    // 4. If roundingMode is HALF-FLOOR, return HALF-CEIL.
+    if (rounding_mode == RoundingMode::HalfFloor)
+        return RoundingMode::HalfCeil;
+
+    // 5. Return roundingMode.
+    return rounding_mode;
+}
+
+// 13.9 GetTemporalOffsetOption ( options, fallback ), https://tc39.es/proposal-temporal/#sec-temporal-gettemporaloffsetoption
+ThrowCompletionOr<OffsetOption> get_temporal_offset_option(VM& vm, Object const& options, OffsetOption fallback)
+{
+    auto string_fallback = [&]() {
+        switch (fallback) {
+        // 1. If fallback is PREFER, let stringFallback be "prefer".
+        case OffsetOption::Prefer:
+            return "prefer"sv;
+        // 2. Else if fallback is USE, let stringFallback be "use".
+        case OffsetOption::Use:
+            return "use"sv;
+        // 3. Else if fallback is IGNORE, let stringFallback be "ignore".
+        case OffsetOption::Ignore:
+            return "ignore"sv;
+        // 4. Else, let stringFallback be "reject".
+        case OffsetOption::Reject:
+            return "reject"sv;
+        }
+        VERIFY_NOT_REACHED();
+    }();
+
+    // 5. Let stringValue be ? GetOption(options, "offset", STRING, « "prefer", "use", "ignore", "reject" », stringFallback).
+    auto string_value = TRY(get_option(vm, options, vm.names.offset, OptionType::String, { "prefer"sv, "use"sv, "ignore"sv, "reject"sv }, string_fallback));
+    auto string_view = string_value.as_string().utf8_string_view();
+
+    // 6. If stringValue is "prefer", return PREFER.
+    if (string_view == "prefer"sv)
+        return OffsetOption::Prefer;
+
+    // 7. If stringValue is "use", return USE.
+    if (string_view == "use"sv)
+        return OffsetOption::Use;
+
+    // 8. If stringValue is "ignore", return IGNORE.
+    if (string_view == "ignore"sv)
+        return OffsetOption::Ignore;
+
+    // 9. Return REJECT.
+    return OffsetOption::Reject;
+}
+
 // 13.10 GetTemporalShowCalendarNameOption ( options ), https://tc39.es/proposal-temporal/#sec-temporal-gettemporalshowcalendarnameoption
 ThrowCompletionOr<ShowCalendar> get_temporal_show_calendar_name_option(VM& vm, Object const& options)
 {
     // 1. Let stringValue be ? GetOption(options, "calendarName", STRING, « "auto", "always", "never", "critical" », "auto").
     auto string_value = TRY(get_option(vm, options, vm.names.calendarName, OptionType::String, { "auto"sv, "always"sv, "never"sv, "critical"sv }, "auto"sv));
+    auto string_view = string_value.as_string().utf8_string_view();
 
     // 2. If stringValue is "always", return ALWAYS.
-    if (string_value.as_string().utf8_string_view() == "always"sv)
+    if (string_view == "always"sv)
         return ShowCalendar::Always;
 
     // 3. If stringValue is "never", return NEVER.
-    if (string_value.as_string().utf8_string_view() == "never"sv)
+    if (string_view == "never"sv)
         return ShowCalendar::Never;
 
     // 4. If stringValue is "critical", return CRITICAL.
-    if (string_value.as_string().utf8_string_view() == "critical"sv)
+    if (string_view == "critical"sv)
         return ShowCalendar::Critical;
 
     // 5. Return AUTO.
     return ShowCalendar::Auto;
+}
+
+// 13.11 GetTemporalShowTimeZoneNameOption ( options ), https://tc39.es/proposal-temporal/#sec-temporal-gettemporalshowtimezonenameoption
+ThrowCompletionOr<ShowTimeZoneName> get_temporal_show_time_zone_name_option(VM& vm, Object const& options)
+{
+    // 1. Let stringValue be ? GetOption(options, "timeZoneName", STRING, « "auto", "never", "critical" », "auto").
+    auto string_value = TRY(get_option(vm, options, vm.names.timeZoneName, OptionType::String, { "auto"sv, "never"sv, "critical"sv }, "auto"sv));
+    auto string_view = string_value.as_string().utf8_string_view();
+
+    // 2. If stringValue is "never", return NEVER.
+    if (string_view == "never"sv)
+        return ShowTimeZoneName::Never;
+
+    // 3. If stringValue is "critical", return CRITICAL.
+    if (string_view == "critical"sv)
+        return ShowTimeZoneName::Critical;
+
+    // 4. Return AUTO.
+    return ShowTimeZoneName::Auto;
+}
+
+// 13.12 GetTemporalShowOffsetOption ( options ), https://tc39.es/proposal-temporal/#sec-temporal-gettemporalshowoffsetoption
+ThrowCompletionOr<ShowOffset> get_temporal_show_offset_option(VM& vm, Object const& options)
+{
+    // 1. Let stringValue be ? GetOption(options, "offset", STRING, « "auto", "never" », "auto").
+    auto string_value = TRY(get_option(vm, options, vm.names.offset, OptionType::String, { "auto"sv, "never"sv }, "auto"sv));
+    auto string_view = string_value.as_string().utf8_string_view();
+
+    // 2. If stringValue is "never", return never.
+    if (string_view == "never"sv)
+        return ShowOffset::Never;
+
+    // 3. Return auto.
+    return ShowOffset::Auto;
+}
+
+// 13.13 GetDirectionOption ( options ), https://tc39.es/proposal-temporal/#sec-temporal-getdirectionoption
+ThrowCompletionOr<Direction> get_direction_option(VM& vm, Object const& options)
+{
+    // 1. Let stringValue be ? GetOption(options, "direction", STRING, « "next", "previous" », REQUIRED).
+    auto string_value = TRY(get_option(vm, options, vm.names.direction, OptionType::String, { "next"sv, "previous"sv }, Required {}));
+    auto string_view = string_value.as_string().utf8_string_view();
+
+    // 2. If stringValue is "next", return NEXT.
+    if (string_view == "next"sv)
+        return Direction::Next;
+
+    // 3. Return PREVIOUS.
+    return Direction::Previous;
 }
 
 // 13.14 ValidateTemporalRoundingIncrement ( increment, dividend, inclusive ), https://tc39.es/proposal-temporal/#sec-validatetemporalroundingincrement
@@ -371,8 +524,159 @@ ThrowCompletionOr<RelativeTo> get_temporal_relative_to_option(VM& vm, Object con
     if (value.is_undefined())
         return RelativeTo { .plain_relative_to = {}, .zoned_relative_to = {} };
 
-    // FIXME: Implement the remaining steps of this AO when we have implemented PlainRelativeTo and ZonedRelativeTo.
-    return RelativeTo { .plain_relative_to = {}, .zoned_relative_to = {} };
+    // 3. Let offsetBehaviour be OPTION.
+    auto offset_behavior = OffsetBehavior::Option;
+
+    // 4. Let matchBehaviour be MATCH-EXACTLY.
+    auto match_behavior = MatchBehavior::MatchExactly;
+
+    String calendar;
+    Optional<String> time_zone;
+    Optional<String> offset_string;
+
+    ISODate iso_date;
+    Variant<ParsedISODateTime::StartOfDay, Time> time { Time {} };
+
+    // 5. If value is an Object, then
+    if (value.is_object()) {
+        auto& object = value.as_object();
+
+        // a. If value has an [[InitializedTemporalZonedDateTime]] internal slot, then
+        if (is<ZonedDateTime>(object)) {
+            // i. Return the Record { [[PlainRelativeTo]]: undefined, [[ZonedRelativeTo]]: value }.
+            return RelativeTo { .plain_relative_to = {}, .zoned_relative_to = static_cast<ZonedDateTime&>(object) };
+        }
+
+        // b. If value has an [[InitializedTemporalDate]] internal slot, then
+        if (is<PlainDate>(object)) {
+            // i. Return the Record { [[PlainRelativeTo]]: value, [[ZonedRelativeTo]]: undefined }.
+            return RelativeTo { .plain_relative_to = static_cast<PlainDate&>(object), .zoned_relative_to = {} };
+        }
+
+        // c. If value has an [[InitializedTemporalDateTime]] internal slot, then
+        if (is<PlainDateTime>(object)) {
+            auto const& plain_date_time = static_cast<PlainDateTime const&>(object);
+
+            // i. Let plainDate be ! CreateTemporalDate(value.[[ISODateTime]].[[ISODate]], value.[[Calendar]]).
+            auto plain_date = MUST(create_temporal_date(vm, plain_date_time.iso_date_time().iso_date, plain_date_time.calendar()));
+
+            // ii. Return the Record { [[PlainRelativeTo]]: plainDate, [[ZonedRelativeTo]]: undefined }.
+            return RelativeTo { .plain_relative_to = plain_date, .zoned_relative_to = {} };
+        }
+
+        // d. Let calendar be ? GetTemporalCalendarIdentifierWithISODefault(value).
+        calendar = TRY(get_temporal_calendar_identifier_with_iso_default(vm, object));
+
+        // e. Let fields be ? PrepareCalendarFields(calendar, value, « YEAR, MONTH, MONTH-CODE, DAY », « HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND, OFFSET, TIME-ZONE », «»).
+        static constexpr auto calendar_field_names = to_array({ CalendarField::Year, CalendarField::Month, CalendarField::MonthCode, CalendarField::Day });
+        static constexpr auto non_calendar_field_names = to_array({ CalendarField::Hour, CalendarField::Minute, CalendarField::Second, CalendarField::Millisecond, CalendarField::Microsecond, CalendarField::Nanosecond, CalendarField::Offset, CalendarField::TimeZone });
+        auto fields = TRY(prepare_calendar_fields(vm, calendar, object, calendar_field_names, non_calendar_field_names, CalendarFieldList {}));
+
+        // f. Let result be ? InterpretTemporalDateTimeFields(calendar, fields, CONSTRAIN).
+        auto result = TRY(interpret_temporal_date_time_fields(vm, calendar, fields, Overflow::Constrain));
+
+        // g. Let timeZone be fields.[[TimeZone]].
+        time_zone = move(fields.time_zone);
+
+        // h. Let offsetString be fields.[[Offset]].
+        offset_string = move(fields.offset);
+
+        // i. If offsetString is UNSET, then
+        if (!offset_string.has_value()) {
+            // i. Set offsetBehaviour to WALL.
+            offset_behavior = OffsetBehavior::Wall;
+        }
+
+        // j. Let isoDate be result.[[ISODate]].
+        iso_date = result.iso_date;
+
+        // k. Let time be result.[[Time]].
+        time = result.time;
+    }
+    // 6. Else,
+    else {
+        // a. If value is not a String, throw a TypeError exception.
+        if (!value.is_string())
+            return vm.throw_completion<TypeError>(ErrorType::NotAString, vm.names.relativeTo);
+
+        // b. Let result be ? ParseISODateTime(value, « TemporalDateTimeString[+Zoned], TemporalDateTimeString[~Zoned] »).
+        auto result = TRY(parse_iso_date_time(vm, value.as_string().utf8_string_view(), { { Production::TemporalZonedDateTimeString, Production::TemporalDateTimeString } }));
+
+        // c. Let offsetString be result.[[TimeZone]].[[OffsetString]].
+        offset_string = move(result.time_zone.offset_string);
+
+        // d. Let annotation be result.[[TimeZone]].[[TimeZoneAnnotation]].
+        auto annotation = move(result.time_zone.time_zone_annotation);
+
+        // e. If annotation is EMPTY, then
+        if (!annotation.has_value()) {
+            // i. Let timeZone be UNSET.
+            time_zone = {};
+        }
+        // f. Else,
+        else {
+            // i. Let timeZone be ? ToTemporalTimeZoneIdentifier(annotation).
+            time_zone = TRY(to_temporal_time_zone_identifier(vm, *annotation));
+
+            // ii. If result.[[TimeZone]].[[Z]] is true, then
+            if (result.time_zone.z_designator) {
+                // 1. Set offsetBehaviour to EXACT.
+                offset_behavior = OffsetBehavior::Exact;
+            }
+            // iii. Else if offsetString is EMPTY, then
+            else if (!offset_string.has_value()) {
+                // 1. Set offsetBehaviour to WALL.
+                offset_behavior = OffsetBehavior::Wall;
+            }
+
+            // iv. Set matchBehaviour to MATCH-MINUTES.
+            match_behavior = MatchBehavior::MatchMinutes;
+        }
+
+        // g. Let calendar be result.[[Calendar]].
+        // h. If calendar is EMPTY, set calendar to "iso8601".
+        calendar = result.calendar.value_or("iso8601"_string);
+
+        // i. Set calendar to ? CanonicalizeCalendar(calendar).
+        calendar = TRY(canonicalize_calendar(vm, calendar));
+
+        // j. Let isoDate be CreateISODateRecord(result.[[Year]], result.[[Month]], result.[[Day]]).
+        iso_date = create_iso_date_record(*result.year, result.month, result.day);
+
+        // k. Let time be result.[[Time]].
+        time = result.time;
+    }
+
+    // 7. If timeZone is UNSET, then
+    if (!time_zone.has_value()) {
+        // a. Let plainDate be ? CreateTemporalDate(isoDate, calendar).
+        auto plain_date = TRY(create_temporal_date(vm, iso_date, move(calendar)));
+
+        // b. Return the Record { [[PlainRelativeTo]]: plainDate, [[ZonedRelativeTo]]: undefined }.
+        return RelativeTo { .plain_relative_to = plain_date, .zoned_relative_to = {} };
+    }
+
+    double offset_nanoseconds = 0;
+
+    // 8. If offsetBehaviour is OPTION, then
+    if (offset_behavior == OffsetBehavior::Option) {
+        // a. Let offsetNs be ! ParseDateTimeUTCOffset(offsetString).
+        offset_nanoseconds = parse_date_time_utc_offset(*offset_string);
+    }
+    // 9. Else,
+    else {
+        // a. Let offsetNs be 0.
+        offset_nanoseconds = 0;
+    }
+
+    // 10. Let epochNanoseconds be ? InterpretISODateTimeOffset(isoDate, time, offsetBehaviour, offsetNs, timeZone, COMPATIBLE, REJECT, matchBehaviour).
+    auto epoch_nanoseconds = TRY(interpret_iso_date_time_offset(vm, iso_date, time, offset_behavior, offset_nanoseconds, *time_zone, Disambiguation::Compatible, OffsetOption::Reject, match_behavior));
+
+    // 11. Let zonedRelativeTo be ! CreateTemporalZonedDateTime(epochNanoseconds, timeZone, calendar).
+    auto zoned_relative_to = MUST(create_temporal_zoned_date_time(vm, BigInt::create(vm, move(epoch_nanoseconds)), time_zone.release_value(), move(calendar)));
+
+    // 12. Return the Record { [[PlainRelativeTo]]: undefined, [[ZonedRelativeTo]]: zonedRelativeTo }.
+    return RelativeTo { .plain_relative_to = {}, .zoned_relative_to = zoned_relative_to };
 }
 
 // 13.19 LargerOfTwoTemporalUnits ( u1, u2 ), https://tc39.es/proposal-temporal/#sec-temporal-largeroftwotemporalunits
@@ -464,8 +768,17 @@ ThrowCompletionOr<bool> is_partial_temporal_object(VM& vm, Value value)
     // 2. If value has an [[InitializedTemporalDate]], [[InitializedTemporalDateTime]], [[InitializedTemporalMonthDay]],
     //    [[InitializedTemporalTime]], [[InitializedTemporalYearMonth]], or [[InitializedTemporalZonedDateTime]] internal
     //    slot, return false.
-    // FIXME: Add the other types as we define them.
+    if (is<PlainDate>(object))
+        return false;
+    if (is<PlainDateTime>(object))
+        return false;
     if (is<PlainMonthDay>(object))
+        return false;
+    if (is<PlainTime>(object))
+        return false;
+    if (is<PlainYearMonth>(object))
+        return false;
+    if (is<ZonedDateTime>(object))
         return false;
 
     // 3. Let calendarProperty be ? Get(value, "calendar").
@@ -521,7 +834,7 @@ String format_fractional_seconds(u64 sub_second_nanoseconds, Precision precision
 }
 
 // 13.25 FormatTimeString ( hour, minute, second, subSecondNanoseconds, precision [ , style ] ), https://tc39.es/proposal-temporal/#sec-temporal-formattimestring
-String format_time_string(u8 hour, u8 minute, u8 second, u16 sub_second_nanoseconds, SecondsStringPrecision::Precision precision, Optional<TimeStyle> style)
+String format_time_string(u8 hour, u8 minute, u8 second, u64 sub_second_nanoseconds, SecondsStringPrecision::Precision precision, Optional<TimeStyle> style)
 {
     // 1. If style is present and style is UNSEPARATED, let separator be the empty String; otherwise, let separator be ":".
     auto separator = style == TimeStyle::Unseparated ? ""sv : ":"sv;
@@ -630,7 +943,7 @@ double apply_unsigned_rounding_mode(double x, double r1, double r2, UnsignedRoun
 }
 
 // 13.27 ApplyUnsignedRoundingMode ( x, r1, r2, unsignedRoundingMode ), https://tc39.es/proposal-temporal/#sec-applyunsignedroundingmode
-Crypto::SignedBigInteger apply_unsigned_rounding_mode(Crypto::SignedDivisionResult const& x, Crypto::SignedBigInteger const& r1, Crypto::SignedBigInteger const& r2, UnsignedRoundingMode unsigned_rounding_mode, Crypto::UnsignedBigInteger const& increment)
+Crypto::SignedBigInteger apply_unsigned_rounding_mode(Crypto::SignedDivisionResult const& x, Crypto::SignedBigInteger r1, Crypto::SignedBigInteger r2, UnsignedRoundingMode unsigned_rounding_mode, Crypto::UnsignedBigInteger const& increment)
 {
     // 1. If x = r1, return r1.
     if (x.quotient == r1 && x.remainder.unsigned_value().is_zero())
@@ -749,7 +1062,7 @@ Crypto::SignedBigInteger round_number_to_increment(Crypto::SignedBigInteger cons
     Sign is_negative;
 
     // 2. If quotient < 0, then
-    if (division_result.quotient.is_negative()) {
+    if (division_result.quotient.is_negative() || division_result.remainder.is_negative()) {
         // a. Let isNegative be NEGATIVE.
         is_negative = Sign::Negative;
 
@@ -773,13 +1086,50 @@ Crypto::SignedBigInteger round_number_to_increment(Crypto::SignedBigInteger cons
     auto r2 = division_result.quotient.plus(1_bigint);
 
     // 7. Let rounded be ApplyUnsignedRoundingMode(quotient, r1, r2, unsignedRoundingMode).
-    auto rounded = apply_unsigned_rounding_mode(division_result, r1, r2, unsigned_rounding_mode, increment);
+    auto rounded = apply_unsigned_rounding_mode(division_result, move(r1), move(r2), unsigned_rounding_mode, increment);
 
     // 8. If isNegative is NEGATIVE, set rounded to -rounded.
     if (is_negative == Sign::Negative)
         rounded.negate();
 
     // 9. Return rounded × increment.
+    return rounded.multiplied_by(increment);
+}
+
+// 13.29 RoundNumberToIncrementAsIfPositive ( x, increment, roundingMode ), https://tc39.es/proposal-temporal/#sec-temporal-roundnumbertoincrementasifpositive
+Crypto::SignedBigInteger round_number_to_increment_as_if_positive(Crypto::SignedBigInteger const& x, Crypto::UnsignedBigInteger const& increment, RoundingMode rounding_mode)
+{
+    // OPTIMIZATION: If the increment is 1 the number is always rounded.
+    if (increment == 1)
+        return x;
+
+    // 1. Let quotient be x / increment.
+    auto division_result = x.divided_by(increment);
+
+    // OPTIMIZATION: If there's no remainder the number is already rounded.
+    if (division_result.remainder.unsigned_value().is_zero())
+        return x;
+
+    // 2. Let unsignedRoundingMode be GetUnsignedRoundingMode(roundingMode, POSITIVE).
+    auto unsigned_rounding_mode = get_unsigned_rounding_mode(rounding_mode, Sign::Positive);
+
+    // 3. Let r1 be the largest integer such that r1 ≤ quotient.
+    // 4. Let r2 be the smallest integer such that r2 > quotient.
+    Crypto::SignedBigInteger r1;
+    Crypto::SignedBigInteger r2;
+
+    if (x.is_negative()) {
+        r1 = division_result.quotient.minus("1"_sbigint);
+        r2 = division_result.quotient;
+    } else {
+        r1 = division_result.quotient;
+        r2 = division_result.quotient.plus("1"_sbigint);
+    }
+
+    // 5. Let rounded be ApplyUnsignedRoundingMode(quotient, r1, r2, unsignedRoundingMode).
+    auto rounded = apply_unsigned_rounding_mode(division_result, move(r1), move(r2), unsigned_rounding_mode, increment);
+
+    // 6. Return rounded × increment.
     return rounded.multiplied_by(increment);
 }
 
@@ -854,7 +1204,9 @@ ThrowCompletionOr<ParsedISODateTime> parse_iso_date_time(VM& vm, StringView iso_
             // 4. If goal is TemporalMonthDayString and parseResult does not contain a DateYear Parse Node, then
             if (goal == Production::TemporalMonthDayString && !parse_result->date_year.has_value()) {
                 // a. Assert: goal is the last element of allowedFormats.
-                VERIFY(goal == allowed_formats.last());
+                // FIXME: Spec issue: This assertion is possibly incorrect.
+                //        https://github.com/tc39/proposal-temporal/issues/3045
+                // VERIFY(goal == allowed_formats.last());
 
                 // b. Set yearAbsent to true.
                 year_absent = true;
@@ -1373,7 +1725,7 @@ ThrowCompletionOr<String> to_offset_string(VM& vm, Value argument)
 }
 
 // 13.42 ISODateToFields ( calendar, isoDate, type ), https://tc39.es/proposal-temporal/#sec-temporal-isodatetofields
-CalendarFields iso_date_to_fields(StringView calendar, ISODate const& iso_date, DateType type)
+CalendarFields iso_date_to_fields(StringView calendar, ISODate iso_date, DateType type)
 {
     // 1. Let fields be an empty Calendar Fields Record with all fields set to unset.
     auto fields = CalendarFields::unset();
@@ -1398,6 +1750,61 @@ CalendarFields iso_date_to_fields(StringView calendar, ISODate const& iso_date, 
 
     // 6. Return fields.
     return fields;
+}
+
+// 13.43 GetDifferenceSettings ( operation, options, unitGroup, disallowedUnits, fallbackSmallestUnit, smallestLargestDefaultUnit ), https://tc39.es/proposal-temporal/#sec-temporal-getdifferencesettings
+ThrowCompletionOr<DifferenceSettings> get_difference_settings(VM& vm, DurationOperation operation, Object const& options, UnitGroup unit_group, ReadonlySpan<Unit> disallowed_units, Unit fallback_smallest_unit, Unit smallest_largest_default_unit)
+{
+    // 1. NOTE: The following steps read options and perform independent validation in alphabetical order.
+
+    // 2. Let largestUnit be ? GetTemporalUnitValuedOption(options, "largestUnit", unitGroup, AUTO).
+    auto largest_unit = TRY(get_temporal_unit_valued_option(vm, options, vm.names.largestUnit, unit_group, Auto {}));
+
+    // 3. If disallowedUnits contains largestUnit, throw a RangeError exception.
+    if (auto* unit = largest_unit.get_pointer<Unit>(); unit && disallowed_units.contains_slow(*unit))
+        return vm.throw_completion<RangeError>(ErrorType::OptionIsNotValidValue, temporal_unit_to_string(*unit), vm.names.largestUnit);
+
+    // 4. Let roundingIncrement be ? GetRoundingIncrementOption(options).
+    auto rounding_increment = TRY(get_rounding_increment_option(vm, options));
+
+    // 5. Let roundingMode be ? GetRoundingModeOption(options, TRUNC).
+    auto rounding_mode = TRY(get_rounding_mode_option(vm, options, RoundingMode::Trunc));
+
+    // 6. If operation is SINCE, then
+    if (operation == DurationOperation::Since) {
+        // a. Set roundingMode to NegateRoundingMode(roundingMode).
+        rounding_mode = negate_rounding_mode(rounding_mode);
+    }
+
+    // 7. Let smallestUnit be ? GetTemporalUnitValuedOption(options, "smallestUnit", unitGroup, fallbackSmallestUnit).
+    auto smallest_unit = TRY(get_temporal_unit_valued_option(vm, options, vm.names.smallestUnit, unit_group, fallback_smallest_unit));
+    auto smallest_unit_value = smallest_unit.get<Unit>();
+
+    // 8. If disallowedUnits contains smallestUnit, throw a RangeError exception.
+    if (disallowed_units.contains_slow(smallest_unit_value))
+        return vm.throw_completion<RangeError>(ErrorType::OptionIsNotValidValue, temporal_unit_to_string(smallest_unit_value), vm.names.smallestUnit);
+
+    // 9. Let defaultLargestUnit be LargerOfTwoTemporalUnits(smallestLargestDefaultUnit, smallestUnit).
+    auto default_largest_unit = larger_of_two_temporal_units(smallest_largest_default_unit, smallest_unit.get<Unit>());
+
+    // 10. If largestUnit is AUTO, set largestUnit to defaultLargestUnit.
+    if (largest_unit.has<Auto>())
+        largest_unit = default_largest_unit;
+    auto largest_unit_value = largest_unit.get<Unit>();
+
+    // 11. If LargerOfTwoTemporalUnits(largestUnit, smallestUnit) is not largestUnit, throw a RangeError exception.
+    if (larger_of_two_temporal_units(largest_unit_value, smallest_unit_value) != largest_unit_value)
+        return vm.throw_completion<RangeError>(ErrorType::TemporalInvalidUnitRange, temporal_unit_to_string(smallest_unit_value), temporal_unit_to_string(largest_unit_value));
+
+    // 12. Let maximum be MaximumTemporalDurationRoundingIncrement(smallestUnit).
+    auto maximum = maximum_temporal_duration_rounding_increment(smallest_unit_value);
+
+    // 13. If maximum is not UNSET, perform ? ValidateTemporalRoundingIncrement(roundingIncrement, maximum, false).
+    if (!maximum.has<Unset>())
+        TRY(validate_temporal_rounding_increment(vm, rounding_increment, maximum.get<u64>(), false));
+
+    // 14. Return the Record { [[SmallestUnit]]: smallestUnit, [[LargestUnit]]: largestUnit, [[RoundingMode]]: roundingMode, [[RoundingIncrement]]: roundingIncrement,  }.
+    return DifferenceSettings { .smallest_unit = smallest_unit_value, .largest_unit = largest_unit_value, .rounding_mode = rounding_mode, .rounding_increment = rounding_increment };
 }
 
 // 14.4.1.1 GetOptionsObject ( options ), https://tc39.es/proposal-temporal/#sec-getoptionsobject
@@ -1521,6 +1928,21 @@ Crypto::SignedBigInteger get_utc_epoch_nanoseconds(ISODateTime const& iso_date_t
         iso_date_time.time.millisecond,
         iso_date_time.time.microsecond,
         iso_date_time.time.nanosecond);
+}
+
+// AD-HOC
+// FIXME: We should add a generic floor() method to our BigInt classes. But for now, since we know we are only dividing
+//        by powers of 10, we can implement a very situationally specific method to compute the floor of a division.
+Crypto::SignedBigInteger big_floor(Crypto::SignedBigInteger const& numerator, Crypto::UnsignedBigInteger const& denominator)
+{
+    auto result = numerator.divided_by(denominator);
+
+    if (result.remainder.is_zero())
+        return result.quotient;
+    if (!result.quotient.is_negative() && result.remainder.is_positive())
+        return result.quotient;
+
+    return result.quotient.minus(Crypto::SignedBigInteger { 1 });
 }
 
 }

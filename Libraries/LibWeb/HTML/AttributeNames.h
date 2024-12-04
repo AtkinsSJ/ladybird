@@ -32,6 +32,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(axis)                       \
     __ENUMERATE_HTML_ATTRIBUTE(background)                 \
     __ENUMERATE_HTML_ATTRIBUTE(behavior)                   \
+    __ENUMERATE_HTML_ATTRIBUTE(bottommargin)               \
     __ENUMERATE_HTML_ATTRIBUTE(bgcolor)                    \
     __ENUMERATE_HTML_ATTRIBUTE(border)                     \
     __ENUMERATE_HTML_ATTRIBUTE(cellpadding)                \
@@ -59,6 +60,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(data)                       \
     __ENUMERATE_HTML_ATTRIBUTE(datetime)                   \
     __ENUMERATE_HTML_ATTRIBUTE(declare)                    \
+    __ENUMERATE_HTML_ATTRIBUTE(decoding)                   \
     __ENUMERATE_HTML_ATTRIBUTE(default_)                   \
     __ENUMERATE_HTML_ATTRIBUTE(defaultchecked)             \
     __ENUMERATE_HTML_ATTRIBUTE(defaultselected)            \
@@ -70,6 +72,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(download)                   \
     __ENUMERATE_HTML_ATTRIBUTE(enctype)                    \
     __ENUMERATE_HTML_ATTRIBUTE(ended)                      \
+    __ENUMERATE_HTML_ATTRIBUTE(enterkeyhint)               \
     __ENUMERATE_HTML_ATTRIBUTE(event)                      \
     __ENUMERATE_HTML_ATTRIBUTE(face)                       \
     __ENUMERATE_HTML_ATTRIBUTE(fetchpriority)              \
@@ -99,11 +102,13 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(is)                         \
     __ENUMERATE_HTML_ATTRIBUTE(iscontenteditable)          \
     __ENUMERATE_HTML_ATTRIBUTE(ismap)                      \
+    __ENUMERATE_HTML_ATTRIBUTE(inputmode)                  \
     __ENUMERATE_HTML_ATTRIBUTE(itemscope)                  \
     __ENUMERATE_HTML_ATTRIBUTE(kind)                       \
     __ENUMERATE_HTML_ATTRIBUTE(label)                      \
     __ENUMERATE_HTML_ATTRIBUTE(lang)                       \
     __ENUMERATE_HTML_ATTRIBUTE(language)                   \
+    __ENUMERATE_HTML_ATTRIBUTE(leftmargin)                 \
     __ENUMERATE_HTML_ATTRIBUTE(link)                       \
     __ENUMERATE_HTML_ATTRIBUTE(list)                       \
     __ENUMERATE_HTML_ATTRIBUTE(loading)                    \
@@ -241,6 +246,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(required)                   \
     __ENUMERATE_HTML_ATTRIBUTE(rev)                        \
     __ENUMERATE_HTML_ATTRIBUTE(reversed)                   \
+    __ENUMERATE_HTML_ATTRIBUTE(rightmargin)                \
     __ENUMERATE_HTML_ATTRIBUTE(rows)                       \
     __ENUMERATE_HTML_ATTRIBUTE(rowspan)                    \
     __ENUMERATE_HTML_ATTRIBUTE(rules)                      \
@@ -274,6 +280,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(target)                     \
     __ENUMERATE_HTML_ATTRIBUTE(text)                       \
     __ENUMERATE_HTML_ATTRIBUTE(title)                      \
+    __ENUMERATE_HTML_ATTRIBUTE(topmargin)                  \
     __ENUMERATE_HTML_ATTRIBUTE(truespeed)                  \
     __ENUMERATE_HTML_ATTRIBUTE(type)                       \
     __ENUMERATE_HTML_ATTRIBUTE(usemap)                     \

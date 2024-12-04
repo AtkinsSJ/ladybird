@@ -73,19 +73,19 @@ public:
     virtual GC::Ptr<DOM::Document> responsible_document() = 0;
 
     // https://html.spec.whatwg.org/multipage/webappapis.html#api-url-character-encoding
-    virtual String api_url_character_encoding() = 0;
+    virtual String api_url_character_encoding() const = 0;
 
     // https://html.spec.whatwg.org/multipage/webappapis.html#api-base-url
-    virtual URL::URL api_base_url() = 0;
+    virtual URL::URL api_base_url() const = 0;
 
     // https://html.spec.whatwg.org/multipage/webappapis.html#concept-settings-object-origin
-    virtual URL::Origin origin() = 0;
+    virtual URL::Origin origin() const = 0;
 
     // A policy container https://html.spec.whatwg.org/multipage/webappapis.html#concept-settings-object-policy-container
-    virtual PolicyContainer policy_container() = 0;
+    virtual PolicyContainer policy_container() const = 0;
 
     // https://html.spec.whatwg.org/multipage/webappapis.html#concept-settings-object-cross-origin-isolated-capability
-    virtual CanUseCrossOriginIsolatedAPIs cross_origin_isolated_capability() = 0;
+    virtual CanUseCrossOriginIsolatedAPIs cross_origin_isolated_capability() const = 0;
 
     URL::URL parse_url(StringView);
 
@@ -149,12 +149,19 @@ JS::Realm& current_principal_realm();
 EnvironmentSettingsObject& principal_realm_settings_object(JS::Realm&);
 EnvironmentSettingsObject& current_principal_settings_object();
 
-JS::Realm& principal_realm(JS::Realm&);
+JS::Realm& principal_realm(GC::Ref<JS::Realm>);
 JS::Object& current_principal_global_object();
+
 JS::Realm& relevant_realm(JS::Object const&);
+JS::Realm& relevant_principal_realm(JS::Object const&);
+
 EnvironmentSettingsObject& relevant_settings_object(JS::Object const&);
 EnvironmentSettingsObject& relevant_settings_object(DOM::Node const&);
+EnvironmentSettingsObject& relevant_principal_settings_object(JS::Object const&);
+
 JS::Object& relevant_global_object(JS::Object const&);
+JS::Object& relevant_principal_global_object(JS::Object const&);
+
 JS::Realm& entry_realm();
 EnvironmentSettingsObject& entry_settings_object();
 JS::Object& entry_global_object();

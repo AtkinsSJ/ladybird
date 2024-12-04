@@ -44,7 +44,7 @@ bool url_matches_about_blank(URL::URL const& url)
         && url.paths().size() == 1 && url.paths()[0] == "blank"sv
         && url.username().is_empty()
         && url.password().is_empty()
-        && url.host().has<Empty>();
+        && !url.host().has_value();
 }
 
 // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#matches-about:srcdoc
@@ -56,7 +56,7 @@ bool url_matches_about_srcdoc(URL::URL const& url)
         && !url.query().has_value()
         && url.username().is_empty()
         && url.password().is_empty()
-        && url.host().has<Empty>();
+        && !url.host().has_value();
 }
 
 // https://html.spec.whatwg.org/multipage/document-sequences.html#determining-the-origin
@@ -163,7 +163,7 @@ WebIDL::ExceptionOr<BrowsingContext::BrowsingContextAndDocument> BrowsingContext
         browsing_context->m_virtual_browsing_context_group_id = creator->browsing_context()->top_level_browsing_context()->m_virtual_browsing_context_group_id;
     }
 
-    // 6. Let sandboxFlags be the result of determining the creation sandboxing flags given browsingContext and embedder.
+    // FIXME: 6. Let sandboxFlags be the result of determining the creation sandboxing flags given browsingContext and embedder.
     SandboxingFlagSet sandbox_flags = {};
 
     // 7. Let origin be the result of determining the origin given about:blank, sandboxFlags, and creatorOrigin.
@@ -236,7 +236,8 @@ WebIDL::ExceptionOr<BrowsingContext::BrowsingContextAndDocument> BrowsingContext
 
     // FIXME: permissions policy: permissionsPolicy
 
-    // FIXME: active sandboxing flag set: sandboxFlags
+    // active sandboxing flag set: sandboxFlags
+    document->set_active_sandboxing_flag_set(sandbox_flags);
 
     // load timing info: loadTimingInfo
     document->set_load_timing_info(load_timing_info);

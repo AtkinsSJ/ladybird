@@ -52,7 +52,7 @@ String HTMLHyperlinkElementUtils::origin() const
         return String {};
 
     // 3. Return the serialization of this element's url's origin.
-    return MUST(String::from_byte_string(m_url->origin().serialize()));
+    return m_url->origin().serialize();
 }
 
 // https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-protocol
@@ -167,15 +167,15 @@ String HTMLHyperlinkElementUtils::host() const
     auto const& url = m_url;
 
     // 3. If url or url's host is null, return the empty string.
-    if (!url.has_value() || url->host().has<Empty>())
+    if (!url.has_value() || !url->host().has_value())
         return String {};
 
     // 4. If url's port is null, return url's host, serialized.
     if (!url->port().has_value())
-        return MUST(url->serialized_host());
+        return url->serialized_host();
 
     // 5. Return url's host, serialized, followed by ":" and url's port, serialized.
-    return MUST(String::formatted("{}:{}", MUST(url->serialized_host()), url->port().value()));
+    return MUST(String::formatted("{}:{}", url->serialized_host(), url->port().value()));
 }
 
 // https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-host
@@ -198,21 +198,24 @@ void HTMLHyperlinkElementUtils::set_host(StringView host)
     update_href();
 }
 
+// https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-hostname
 String HTMLHyperlinkElementUtils::hostname() const
 {
     // 1. Reinitialize url.
-    //
+    reinitialize_url();
+
     // 2. Let url be this element's url.
-    URL::URL url(href());
+    auto url = m_url;
 
     // 3. If url or url's host is null, return the empty string.
-    if (url.host().has<Empty>())
+    if (!url.has_value() || !url->host().has_value())
         return String {};
 
     // 4. Return url's host, serialized.
-    return MUST(url.serialized_host());
+    return url->serialized_host();
 }
 
+// https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-hostname
 void HTMLHyperlinkElementUtils::set_hostname(StringView hostname)
 {
     // 1. Reinitialize url.

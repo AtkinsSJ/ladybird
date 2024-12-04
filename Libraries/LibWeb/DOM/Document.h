@@ -526,6 +526,7 @@ public:
 
     // https://html.spec.whatwg.org/multipage/origin.html#active-sandboxing-flag-set
     HTML::SandboxingFlagSet active_sandboxing_flag_set() const;
+    void set_active_sandboxing_flag_set(HTML::SandboxingFlagSet);
 
     // https://html.spec.whatwg.org/multipage/dom.html#concept-document-policy-container
     HTML::PolicyContainer policy_container() const;
@@ -568,12 +569,12 @@ public:
     void set_previous_document_unload_timing(DocumentUnloadTimingInfo const& previous_document_unload_timing) { m_previous_document_unload_timing = previous_document_unload_timing; }
 
     // https://w3c.github.io/editing/docs/execCommand/
-    bool exec_command(String const& command, bool show_ui, String const& value);
-    bool query_command_enabled(String const& command);
-    bool query_command_indeterm(String const& command);
-    bool query_command_state(String const& command);
-    bool query_command_supported(String const& command);
-    String query_command_value(String const& command);
+    bool exec_command(FlyString const& command, bool show_ui, String const& value);
+    bool query_command_enabled(FlyString const& command);
+    bool query_command_indeterm(FlyString const& command);
+    bool query_command_state(FlyString const& command);
+    bool query_command_supported(FlyString const& command);
+    String query_command_value(FlyString const& command);
 
     // https://w3c.github.io/selection-api/#dfn-has-scheduled-selectionchange-event
     bool has_scheduled_selectionchange_event() const { return m_has_scheduled_selectionchange_event; }
@@ -747,6 +748,14 @@ public:
     void reset_cursor_blink_cycle();
 
     GC::Ref<EditingHostManager> editing_host_manager() const { return *m_editing_host_manager; }
+
+    // // https://w3c.github.io/editing/docs/execCommand/#default-single-line-container-name
+    FlyString const& default_single_line_container_name() const { return m_default_single_line_container_name; }
+    void set_default_single_line_container_name(FlyString const& name) { m_default_single_line_container_name = name; }
+
+    // https://w3c.github.io/editing/docs/execCommand/#css-styling-flag
+    bool css_styling_flag() const { return m_css_styling_flag; }
+    void set_css_styling_flag(bool flag) { m_css_styling_flag = flag; }
 
 protected:
     virtual void initialize(JS::Realm&) override;
@@ -1038,6 +1047,12 @@ private:
     mutable OwnPtr<Unicode::Segmenter> m_word_segmenter;
 
     GC::Ref<EditingHostManager> m_editing_host_manager;
+
+    // https://w3c.github.io/editing/docs/execCommand/#default-single-line-container-name
+    FlyString m_default_single_line_container_name { HTML::TagNames::div };
+
+    // https://w3c.github.io/editing/docs/execCommand/#css-styling-flag
+    bool m_css_styling_flag { false };
 };
 
 template<>

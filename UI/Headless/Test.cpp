@@ -57,7 +57,7 @@ static ErrorOr<void> load_test_config(StringView test_root_path)
     return {};
 }
 
-static ErrorOr<void> collect_dump_tests(Vector<Test>& tests, StringView path, StringView trail, TestMode mode)
+static ErrorOr<void> collect_dump_tests(Application const& app, Vector<Test>& tests, StringView path, StringView trail, TestMode mode)
 {
     Core::DirIterator it(ByteString::formatted("{}/input/{}", path, trail), Core::DirIterator::Flags::SkipDots);
 
@@ -66,7 +66,7 @@ static ErrorOr<void> collect_dump_tests(Vector<Test>& tests, StringView path, St
         auto input_path = TRY(FileSystem::real_path(ByteString::formatted("{}/input/{}/{}", path, trail, name)));
 
         if (FileSystem::is_directory(input_path)) {
-            TRY(collect_dump_tests(tests, path, ByteString::formatted("{}/{}", trail, name), mode));
+            TRY(collect_dump_tests(app, tests, path, ByteString::formatted("{}/{}", trail, name), mode));
             continue;
         }
 
@@ -74,13 +74,14 @@ static ErrorOr<void> collect_dump_tests(Vector<Test>& tests, StringView path, St
             continue;
 
         auto expectation_path = ByteString::formatted("{}/expected/{}/{}.txt", path, trail, LexicalPath::title(name));
-        tests.append({ mode, input_path, move(expectation_path), {} });
+        auto relative_path = LexicalPath::relative_path(input_path, app.test_root_path).release_value();
+        tests.append({ mode, input_path, move(expectation_path), move(relative_path) });
     }
 
     return {};
 }
 
-static ErrorOr<void> collect_ref_tests(Vector<Test>& tests, StringView path, StringView trail)
+static ErrorOr<void> collect_ref_tests(Application const& app, Vector<Test>& tests, StringView path, StringView trail)
 {
     Core::DirIterator it(ByteString::formatted("{}/input/{}", path, trail), Core::DirIterator::Flags::SkipDots);
     while (it.has_next()) {
@@ -88,11 +89,12 @@ static ErrorOr<void> collect_ref_tests(Vector<Test>& tests, StringView path, Str
         auto input_path = TRY(FileSystem::real_path(ByteString::formatted("{}/input/{}/{}", path, trail, name)));
 
         if (FileSystem::is_directory(input_path)) {
-            TRY(collect_ref_tests(tests, path, ByteString::formatted("{}/{}", trail, name)));
+            TRY(collect_ref_tests(app, tests, path, ByteString::formatted("{}/{}", trail, name)));
             continue;
         }
 
-        tests.append({ TestMode::Ref, input_path, {}, {} });
+        auto relative_path = LexicalPath::relative_path(input_path, app.test_root_path).release_value();
+        tests.append({ TestMode::Ref, input_path, {}, move(relative_path) });
     }
 
     return {};
@@ -249,7 +251,7 @@ static void run_ref_test(HeadlessWebView& view, Test& test, URL::URL const& url,
             return TestResult::Pass;
 
         if (Application::the().dump_failed_ref_tests) {
-            warnln("\033[33;1mRef test {} failed; dumping screenshots\033[0m", url);
+            warnln("\033[33;1mRef test {} failed; dumping screenshots\033[0m", test.relative_path);
 
             auto dump_screenshot = [&](Gfx::Bitmap& bitmap, StringView path) -> ErrorOr<void> {
                 auto screenshot_file = TRY(Core::File::open(path, Core::File::OpenMode::Write));
@@ -394,11 +396,11 @@ ErrorOr<void> run_tests(Core::AnonymousBuffer const& theme, Web::DevicePixelSize
     Vector<Test> tests;
     auto test_glob = ByteString::formatted("*{}*", app.test_glob);
 
-    TRY(collect_dump_tests(tests, ByteString::formatted("{}/Layout", app.test_root_path), "."sv, TestMode::Layout));
-    TRY(collect_dump_tests(tests, ByteString::formatted("{}/Text", app.test_root_path), "."sv, TestMode::Text));
-    TRY(collect_ref_tests(tests, ByteString::formatted("{}/Ref", app.test_root_path), "."sv));
+    TRY(collect_dump_tests(app, tests, ByteString::formatted("{}/Layout", app.test_root_path), "."sv, TestMode::Layout));
+    TRY(collect_dump_tests(app, tests, ByteString::formatted("{}/Text", app.test_root_path), "."sv, TestMode::Text));
+    TRY(collect_ref_tests(app, tests, ByteString::formatted("{}/Ref", app.test_root_path), "."sv));
 #if !defined(AK_OS_MACOS)
-    TRY(collect_ref_tests(tests, ByteString::formatted("{}/Screenshot", app.test_root_path), "."sv));
+    TRY(collect_ref_tests(app, tests, ByteString::formatted("{}/Screenshot", app.test_root_path), "."sv));
 #endif
 
     tests.remove_all_matching([&](auto const& test) {
@@ -409,7 +411,7 @@ ErrorOr<void> run_tests(Core::AnonymousBuffer const& theme, Web::DevicePixelSize
         outln("Found {} tests...", tests.size());
 
         for (auto const& [i, test] : enumerate(tests))
-            outln("{}/{}: {}", i + 1, tests.size(), *LexicalPath::relative_path(test.input_path, app.test_root_path));
+            outln("{}/{}: {}", i + 1, tests.size(), test.relative_path);
 
         return {};
     }
@@ -441,7 +443,8 @@ ErrorOr<void> run_tests(Core::AnonymousBuffer const& theme, Web::DevicePixelSize
     size_t skipped_count = 0;
     bool all_tests_ok = true;
 
-    bool is_tty = isatty(STDOUT_FILENO);
+    // Keep clearing and reusing the same line if stdout is a TTY.
+    bool log_on_one_line = app.verbosity < Application::VERBOSITY_LEVEL_LOG_TEST_DURATION && isatty(STDOUT_FILENO) == 1;
     outln("Running {} tests...", tests.size());
 
     auto all_tests_complete = Core::Promise<Empty>::construct();
@@ -460,18 +463,14 @@ ErrorOr<void> run_tests(Core::AnonymousBuffer const& theme, Web::DevicePixelSize
 
             auto& test = tests[index];
             test.start_time = UnixDateTime::now();
+            test.index = index + 1;
 
-            if (is_tty) {
-                // Keep clearing and reusing the same line if stdout is a TTY.
-                out("\33[2K\r");
+            if (log_on_one_line) {
+                out("\33[2K\r{}/{}: {}", test.index, tests.size(), test.relative_path);
+                (void)fflush(stdout);
+            } else {
+                outln("{}/{}:  Start {}", test.index, tests.size(), test.relative_path);
             }
-
-            out("{}/{}: {}", index + 1, tests.size(), LexicalPath::relative_path(test.input_path, app.test_root_path));
-
-            if (is_tty)
-                fflush(stdout);
-            else
-                outln("");
 
             Core::deferred_invoke([&]() mutable {
                 if (s_skipped_tests.contains_slow(test.input_path))
@@ -483,6 +482,11 @@ ErrorOr<void> run_tests(Core::AnonymousBuffer const& theme, Web::DevicePixelSize
 
         view.test_promise().when_resolved([&, run_next_test](auto result) {
             result.test.end_time = UnixDateTime::now();
+
+            if (app.verbosity >= Application::VERBOSITY_LEVEL_LOG_TEST_DURATION) {
+                auto duration = result.test.end_time - result.test.start_time;
+                outln("{}/{}: Finish {}: {}ms", result.test.index, tests.size(), result.test.relative_path, duration.to_milliseconds());
+            }
 
             switch (result.result) {
             case TestResult::Pass:
@@ -521,7 +525,7 @@ ErrorOr<void> run_tests(Core::AnonymousBuffer const& theme, Web::DevicePixelSize
 
     MUST(all_tests_complete->await());
 
-    if (is_tty)
+    if (log_on_one_line)
         outln("\33[2K\rDone!");
 
     outln("==========================================================");
@@ -529,13 +533,13 @@ ErrorOr<void> run_tests(Core::AnonymousBuffer const& theme, Web::DevicePixelSize
     outln("==========================================================");
 
     for (auto const& non_passing_test : non_passing_tests) {
-        if (non_passing_test.result == TestResult::Skipped && !app.verbose)
+        if (non_passing_test.result == TestResult::Skipped && app.verbosity < Application::VERBOSITY_LEVEL_LOG_SKIPPED_TESTS)
             continue;
 
-        outln("{}: {}", test_result_to_string(non_passing_test.result), non_passing_test.test.input_path);
+        outln("{}: {}", test_result_to_string(non_passing_test.result), non_passing_test.test.relative_path);
     }
 
-    if (app.verbose) {
+    if (app.verbosity >= Application::VERBOSITY_LEVEL_LOG_SLOWEST_TESTS) {
         auto tests_to_print = min(10uz, tests.size());
         outln("\nSlowest {} tests:", tests_to_print);
 
@@ -546,10 +550,9 @@ ErrorOr<void> run_tests(Core::AnonymousBuffer const& theme, Web::DevicePixelSize
         });
 
         for (auto const& test : tests.span().trim(tests_to_print)) {
-            auto name = LexicalPath::relative_path(test.input_path, app.test_root_path);
             auto duration = test.end_time - test.start_time;
 
-            outln("{}: {}ms", name, duration.to_milliseconds());
+            outln("{}: {}ms", test.relative_path, duration.to_milliseconds());
         }
     }
 

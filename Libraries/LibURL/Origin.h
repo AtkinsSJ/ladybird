@@ -8,6 +8,7 @@
 #pragma once
 
 #include <AK/ByteString.h>
+#include <LibURL/Forward.h>
 #include <LibURL/Host.h>
 
 namespace URL {
@@ -15,22 +16,21 @@ namespace URL {
 class Origin {
 public:
     Origin() = default;
-    Origin(Optional<ByteString> const& scheme, Host const& host, Optional<u16> port)
-        : m_scheme(scheme)
-        , m_host(host)
-        , m_port(port)
+    Origin(Optional<String> const& scheme, Host const& host, Optional<u16> port)
+        : m_state(State {
+              .scheme = scheme,
+              .host = host,
+              .port = move(port),
+          })
     {
     }
 
     // https://html.spec.whatwg.org/multipage/origin.html#concept-origin-opaque
-    bool is_opaque() const { return !m_scheme.has_value() && m_host.has<Empty>() && !m_port.has_value(); }
+    bool is_opaque() const { return !m_state.has_value(); }
 
-    StringView scheme() const
-    {
-        return m_scheme.map([](auto& str) { return str.view(); }).value_or(StringView {});
-    }
-    Host const& host() const { return m_host; }
-    Optional<u16> port() const { return m_port; }
+    Optional<String> const& scheme() const { return m_state->scheme; }
+    Host const& host() const { return m_state->host; }
+    Optional<u16> port() const { return m_state->port; }
 
     // https://html.spec.whatwg.org/multipage/origin.html#same-origin
     bool is_same_origin(Origin const& other) const
@@ -40,10 +40,15 @@ public:
             return true;
 
         // 2. If A and B are both tuple origins and their schemes, hosts, and port are identical, then return true.
-        // 3. Return false.
-        return scheme() == other.scheme()
+        if (!is_opaque() && !other.is_opaque()
+            && scheme() == other.scheme()
             && host() == other.host()
-            && port() == other.port();
+            && port() == other.port()) {
+            return true;
+        }
+
+        // 3. Return false.
+        return false;
     }
 
     // https://html.spec.whatwg.org/multipage/origin.html#same-origin-domain
@@ -70,8 +75,11 @@ public:
         return false;
     }
 
+    // https://html.spec.whatwg.org/multipage/browsers.html#same-site
+    bool is_same_site(Origin const&) const;
+
     // https://html.spec.whatwg.org/multipage/origin.html#ascii-serialisation-of-an-origin
-    ByteString serialize() const;
+    String serialize() const;
 
     // https://html.spec.whatwg.org/multipage/origin.html#concept-origin-effective-domain
     Optional<Host> effective_domain() const
@@ -83,15 +91,18 @@ public:
         // FIXME: 2. If origin's domain is non-null, then return origin's domain.
 
         // 3. Return origin's host.
-        return m_host;
+        return m_state->host;
     }
 
     bool operator==(Origin const& other) const { return is_same_origin(other); }
 
 private:
-    Optional<ByteString> m_scheme;
-    Host m_host;
-    Optional<u16> m_port;
+    struct State {
+        Optional<String> scheme;
+        Host host;
+        Optional<u16> port;
+    };
+    Optional<State> m_state;
 };
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023, Andreas Kling <andreas@ladybird.org>
+ * Copyright (c) 2018-2024, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021-2024, Sam Atkins <sam@ladybird.org>
  * Copyright (c) 2021, Tobias Christiansen <tobyase@serenityos.org>
  * Copyright (c) 2022-2023, MacDue <macdue@dueutil.tech>
@@ -48,6 +48,7 @@
 #include <LibWeb/CSS/StyleValues/RectStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ResolutionStyleValue.h>
 #include <LibWeb/CSS/StyleValues/RotationStyleValue.h>
+#include <LibWeb/CSS/StyleValues/ScaleStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ScrollbarGutterStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ShadowStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ShorthandStyleValue.h>
@@ -56,6 +57,7 @@
 #include <LibWeb/CSS/StyleValues/TimeStyleValue.h>
 #include <LibWeb/CSS/StyleValues/TransformationStyleValue.h>
 #include <LibWeb/CSS/StyleValues/TransitionStyleValue.h>
+#include <LibWeb/CSS/StyleValues/TranslationStyleValue.h>
 #include <LibWeb/CSS/StyleValues/URLStyleValue.h>
 #include <LibWeb/CSS/StyleValues/UnresolvedStyleValue.h>
 
@@ -294,6 +296,12 @@ RotationStyleValue const& CSSStyleValue::as_rotation() const
     return static_cast<RotationStyleValue const&>(*this);
 }
 
+ScaleStyleValue const& CSSStyleValue::as_scale() const
+{
+    VERIFY(is_scale());
+    return static_cast<ScaleStyleValue const&>(*this);
+}
+
 ScrollbarGutterStyleValue const& CSSStyleValue::as_scrollbar_gutter() const
 {
     VERIFY(is_scrollbar_gutter());
@@ -334,6 +342,12 @@ TransitionStyleValue const& CSSStyleValue::as_transition() const
 {
     VERIFY(is_transition());
     return static_cast<TransitionStyleValue const&>(*this);
+}
+
+TranslationStyleValue const& CSSStyleValue::as_translation() const
+{
+    VERIFY(is_translation());
+    return static_cast<TranslationStyleValue const&>(*this);
 }
 
 UnresolvedStyleValue const& CSSStyleValue::as_unresolved() const

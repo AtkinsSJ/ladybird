@@ -36,11 +36,14 @@
 #include <LibWeb/HTML/CustomElements/CustomElementReactionNames.h>
 #include <LibWeb/HTML/HTMLAnchorElement.h>
 #include <LibWeb/HTML/HTMLDocument.h>
+#include <LibWeb/HTML/HTMLFieldSetElement.h>
 #include <LibWeb/HTML/HTMLImageElement.h>
 #include <LibWeb/HTML/HTMLInputElement.h>
+#include <LibWeb/HTML/HTMLLegendElement.h>
 #include <LibWeb/HTML/HTMLSelectElement.h>
 #include <LibWeb/HTML/HTMLSlotElement.h>
 #include <LibWeb/HTML/HTMLStyleElement.h>
+#include <LibWeb/HTML/HTMLTableElement.h>
 #include <LibWeb/HTML/Navigable.h>
 #include <LibWeb/HTML/NavigableContainer.h>
 #include <LibWeb/HTML/Parser/HTMLParser.h>
@@ -51,6 +54,8 @@
 #include <LibWeb/Namespace.h>
 #include <LibWeb/Painting/Paintable.h>
 #include <LibWeb/Painting/PaintableBox.h>
+#include <LibWeb/SVG/SVGTitleElement.h>
+#include <LibWeb/XLink/AttributeNames.h>
 
 namespace Web::DOM {
 
@@ -980,8 +985,13 @@ WebIDL::ExceptionOr<GC::Ref<Node>> Node::replace_child(GC::Ref<Node> node, GC::R
     else
         nodes.append(GC::make_root(*node));
 
-    // 13. Insert node into parent before referenceChild with the suppress observers flag set.
-    insert_before(node, reference_child, true);
+    // AD-HOC: Since removing the child may have executed arbitrary code, we have to verify
+    //         the sanity of inserting `node` before `reference_child` again, as well as
+    //         `child` not being reinserted elsewhere.
+    if (!reference_child || (reference_child->parent() == this && !child->parent_node())) {
+        // 13. Insert node into parent before referenceChild with the suppress observers flag set.
+        insert_before(node, reference_child, true);
+    }
 
     // 14. Queue a tree mutation record for parent with nodes, removedNodes, previousSibling, and referenceChild.
     queue_tree_mutation_record(move(nodes), move(removed_nodes), previous_sibling.ptr(), reference_child.ptr());
@@ -2206,23 +2216,26 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
     if (is_element()) {
         auto const* element = static_cast<DOM::Element const*>(this);
         auto role = element->role_or_default();
-        bool is_referenced = false;
-        auto id = element->id();
-        if (id.has_value()) {
-            this->root().for_each_in_inclusive_subtree_of_type<HTML::HTMLElement>([&](auto& element) {
-                auto aria_data = MUST(Web::ARIA::AriaData::build_data(element));
-                if (aria_data->aria_labelled_by_or_default().contains_slow(id.value())) {
-                    is_referenced = true;
-                    return TraversalDecision::Break;
-                }
-                return TraversalDecision::Continue;
-            });
-        }
         // 2. Compute the text alternative for the current node:
-        // A. If the current node is hidden and is not directly referenced by aria-labelledby or aria-describedby, nor directly referenced by a native host language text alternative element (e.g. label in HTML) or attribute, return the empty string.
-        // FIXME: Check for references
-        if (element->aria_hidden() == "true")
-            return String {};
+
+        // A. Hidden Not Referenced: If the current node is hidden and is:
+        // i. Not part of an aria-labelledby or aria-describedby traversal, where the node directly referenced by that
+        // relation was hidden.
+        // ii. Nor part of a native host language text alternative element (e.g. label in HTML) or attribute traversal,
+        // where the root of that traversal was hidden.
+        // Return the empty string.
+        // NOTE: Nodes with CSS properties display:none, visibility:hidden, visibility:collapse or
+        // content-visibility:hidden: They are considered hidden, as they match the guidelines "not perceivable" and
+        // "explicitly hidden".
+        //
+        // AD-HOC: We don’t implement this step here — because strictly implementing this would cause us to return early
+        // whenever encountering a node (element, actually) that “is hidden and is not directly referenced by
+        // aria-labelledby or aria-describedby”, without traversing down through that element’s subtree to see if it has
+        // (1) any descendant elements that are directly referenced and/or (2) any un-hidden nodes. So we instead (in
+        // substep G below) traverse upward through ancestor nodes of every text node, and check in that way to do the
+        // equivalent of what this step seems to have been intended to do.
+        // https://github.com/w3c/aria/issues/2387
+
         // B. Otherwise:
         // - if computing a name, and the current node has an aria-labelledby attribute that contains at least one valid IDREF, and the current node is not already part of an aria-labelledby traversal,
         //   process its IDREFs in the order they occur:
@@ -2250,6 +2263,7 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
                 // AD-HOC: The “For each IDREF” substep in the spec doesn’t seem to explicitly require the following
                 // check for an aria-label value; but the “div group explicitly labelledby self and heading” subtest at
                 // https://wpt.fyi/results/accname/name/comp_labelledby.html won’t pass unless we do this check.
+                // https://github.com/w3c/aria/issues/2388
                 if (target == NameOrDescription::Name && node->aria_label().has_value() && !node->aria_label()->is_empty() && !node->aria_label()->bytes_as_string_view().is_whitespace()) {
                     total_accumulated_text.append(' ');
                     total_accumulated_text.append(node->aria_label().value());
@@ -2265,13 +2279,33 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
                 total_accumulated_text.append(result);
             }
             // iii. Return the accumulated text.
+            // AD-HOC: This substep in the spec doesn’t seem to explicitly require the following check for an aria-label
+            // value; but the “button's hidden referenced name (visibility:hidden) with hidden aria-labelledby traversal
+            // falls back to aria-label” subtest at https://wpt.fyi/results/accname/name/comp_labelledby.html won’t pass
+            // unless we do this check.
+            // https://github.com/w3c/aria/issues/2388
+            if (total_accumulated_text.string_view().is_whitespace() && target == NameOrDescription::Name && element->aria_label().has_value() && !element->aria_label()->is_empty() && !element->aria_label()->bytes_as_string_view().is_whitespace())
+                return element->aria_label().release_value();
             return total_accumulated_text.to_string();
         }
-        // C. Embedded Control: Otherwise, if the current node is a control embedded
-        // within the label (e.g. any element directly referenced by aria-labelledby) for
-        // another widget, where the user can adjust the embedded control's value, then
-        // return the embedded control as part of the text alternative in the following
-        // manner:
+
+        // D. AriaLabel: Otherwise, if the current node has an aria-label attribute whose value is not undefined, not
+        // the empty string, nor, when trimmed of whitespace, is not the empty string:
+        // AD-HOC: We’ve reordered substeps C and D from https://w3c.github.io/accname/#step2 — because
+        // the more-specific per-HTML-element requirements at https://w3c.github.io/html-aam/#accname-computation
+        // necessitate doing so, and the “input with label for association is superceded by aria-label” subtest at
+        // https://wpt.fyi/results/accname/name/comp_label.html won’t pass unless we do this reordering.
+        // Spec PR: https://github.com/w3c/aria/pull/2377
+        if (target == NameOrDescription::Name && element->aria_label().has_value() && !element->aria_label()->is_empty() && !element->aria_label()->bytes_as_string_view().is_whitespace()) {
+            // TODO: - If traversal of the current node is due to recursion and the current node is an embedded control as defined in step 2E, ignore aria-label and skip to rule 2E.
+            // https://github.com/w3c/aria/pull/2385 and https://github.com/w3c/accname/issues/173
+            if (!element->is_html_slot_element())
+                return element->aria_label().value();
+        }
+
+        // C. Embedded Control: Otherwise, if the current node is a control embedded within the label (e.g. any element
+        // directly referenced by aria-labelledby) for another widget, where the user can adjust the embedded control's
+        // value, then return the embedded control as part of the text alternative in the following manner:
         GC::Ptr<DOM::NodeList> labels;
         if (is<HTML::HTMLElement>(this))
             labels = (const_cast<HTML::HTMLElement&>(static_cast<HTML::HTMLElement const&>(*current_node))).labels();
@@ -2280,6 +2314,16 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
             for (u32 i = 0; i < labels->length(); i++) {
                 auto nodes = labels->item(i)->children_as_vector();
                 for (auto const& node : nodes) {
+                    // AD-HOC: https://wpt.fyi/results/accname/name/comp_host_language_label.html has “encapsulation”
+                    // tests, from which can be induced a requirement that when computing the accessible name for a
+                    // <label>-ed form control (“embedded control”), then any content (text content or attribute values)
+                    // from the control itself that would otherwise be included in the accessible-name computation for
+                    // it ancestor <label> must instead be skipped and not included. The HTML-AAM spec seems to maybe
+                    // be trying to achieve that result by expressing specific steps for each particular type of form
+                    // control. But what all that reduces/optimizes/simplifies down to is just, “skip over self”.
+                    // https://github.com/w3c/aria/issues/2389
+                    if (node == this)
+                        continue;
                     if (node->is_element()) {
                         auto const& element = static_cast<DOM::Element const&>(*node);
                         auto role = element.role_or_default();
@@ -2341,28 +2385,67 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
             return builder.to_string();
         }
 
-        // D. AriaLabel: Otherwise, if the current node has an aria-label attribute whose
-        // value is not undefined, not the empty string, nor, when trimmed of whitespace,
-        // is not the empty string:
-        if (target == NameOrDescription::Name && element->aria_label().has_value() && !element->aria_label()->is_empty() && !element->aria_label()->bytes_as_string_view().is_whitespace()) {
-            // TODO: - If traversal of the current node is due to recursion and the current node is an embedded control as defined in step 2E, ignore aria-label and skip to rule 2E.
-            // - Otherwise, return the value of aria-label.
-            return element->aria_label().value();
-        }
-
         // E. Host Language Label: Otherwise, if the current node's native markup provides an attribute (e.g. alt) or
         // element (e.g. HTML label or SVG title) that defines a text alternative, return that alternative in the form
         // of a flat string as defined by the host language, unless the element is marked as presentational
         // (role="presentation" or role="none").
-        if (role != ARIA::Role::presentation && role != ARIA::Role::none && is<HTML::HTMLImageElement>(*element)) {
+        // TODO: Confirm (through existing WPT test cases) whether HTMLLabelElement is already handled (by the code for
+        // step C. “Embedded Control” above) in conformance with the spec requirements — and if not, then add handling.
+        if (role != ARIA::Role::presentation && role != ARIA::Role::none && is<HTML::HTMLImageElement>(*element))
             return element->alternative_text().release_value();
-            // TODO: Add handling for SVGTitleElement, and also confirm (through existing WPT test cases) whether
-            // HTMLLabelElement is already handled (by the code for step C. “Embedded Control” above) in conformance
-            // with the spec requirements — and if not, then add handling for it here.
+        // https://w3c.github.io/svg-aam/#mapping_additional_nd
+        Optional<String> title_element_text;
+        if (element->is_svg_element()) {
+            // If the current node has at least one direct child title element, select the appropriate title based on
+            // the language rules for the SVG specification, and return the title text alternative as a flat string.
+            element->for_each_child_of_type<SVG::SVGTitleElement>([&](SVG::SVGTitleElement const& title) mutable {
+                title_element_text = title.text_content();
+                return IterationDecision::Break;
+            });
+            if (title_element_text.has_value())
+                return title_element_text.release_value();
+            // If the current node is a link, and there was no child title element, but it has an xlink:title attribute,
+            // return the value of that attribute.
+            if (auto title_attribute = element->get_attribute_ns(Namespace::XLink, XLink::AttributeNames::title); title_attribute.has_value())
+                return title_attribute.release_value();
+        }
+        // https://w3c.github.io/html-aam/#table-element-accessible-name-computation
+        // if the table element has a child that is a caption element, then use the subtree of the first such element
+        if (is<HTML::HTMLTableElement>(*element))
+            if (auto& table = (const_cast<HTML::HTMLTableElement&>(static_cast<HTML::HTMLTableElement const&>(*element))); table.caption())
+                return table.caption()->text_content().release_value();
+        // https://w3c.github.io/html-aam/#table-element-accessible-name-computation
+        // if the fieldset element has a child that is a legend element, then use the subtree of the first such element
+        if (is<HTML::HTMLFieldSetElement>(*element)) {
+            Optional<String> legend;
+            auto& fieldset = (const_cast<HTML::HTMLFieldSetElement&>(static_cast<HTML::HTMLFieldSetElement const&>(*element)));
+            fieldset.for_each_child_of_type<HTML::HTMLLegendElement>([&](HTML::HTMLLegendElement const& element) mutable {
+                legend = element.text_content().release_value();
+                return IterationDecision::Break;
+            });
+            if (legend.has_value())
+                return legend.release_value();
+        }
+        if (is<HTML::HTMLInputElement>(*element)) {
+            auto& input = (const_cast<HTML::HTMLInputElement&>(static_cast<HTML::HTMLInputElement const&>(*element)));
+            // https://w3c.github.io/html-aam/#input-type-button-input-type-submit-and-input-type-reset-accessible-name-computation
+            // Otherwise use the value attribute.
+            if (input.type_state() == HTML::HTMLInputElement::TypeAttributeState::Button
+                || input.type_state() == HTML::HTMLInputElement::TypeAttributeState::SubmitButton
+                || input.type_state() == HTML::HTMLInputElement::TypeAttributeState::ResetButton)
+                if (auto value = input.get_attribute(HTML::AttributeNames::value); value.has_value())
+                    return value.release_value();
+            // https://w3c.github.io/html-aam/#input-type-image-accessible-name-computation
+            // Otherwise use alt attribute if present and its value is not the empty string.
+            if (input.type_state() == HTML::HTMLInputElement::TypeAttributeState::ImageButton)
+                if (auto alt = element->get_attribute(HTML::AttributeNames::alt); alt.has_value())
+                    return alt.release_value();
         }
 
-        // F. Otherwise, if the current node's role allows name from content, or if the current node is referenced by aria-labelledby, aria-describedby, or is a native host language text alternative element (e.g. label in HTML), or is a descendant of a native host language text alternative element:
-        if ((role.has_value() && ARIA::allows_name_from_content(role.value())) || is_referenced || is_descendant == IsDescendant::Yes) {
+        // F. Name From Content: Otherwise, if the current node's role allows name from content, or if the current node
+        // is referenced by aria-labelledby, aria-describedby, or is a native host language text alternative element
+        // (e.g. label in HTML), or is a descendant of a native host language text alternative element:
+        if ((role.has_value() && ARIA::allows_name_from_content(role.value())) || element->is_referenced() || is_descendant == IsDescendant::Yes) {
             // i. Set the accumulated text to the empty string.
             total_accumulated_text.clear();
             // ii. Name From Generated Content: Check for CSS generated textual content associated with the current node and include
@@ -2379,39 +2462,46 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
                 else
                     total_accumulated_text.append(before->computed_values().content().data);
             }
-            // iii. For each child node of the current node:
-            element->for_each_child([&total_accumulated_text, current_node, target, &document, &visited_nodes](
-                                        DOM::Node const& child_node) mutable {
-                if (!child_node.is_element() && !child_node.is_text())
-                    return IterationDecision::Continue;
+            // iii. Determine Child Nodes: Determine the rendered child nodes of the current node:
+            // iii. Determine Child Nodes: Determine the rendered child nodes of the current node:
+            // c. [Otherwise,] set the rendered child nodes to be the child nodes of the current node.
+            auto child_nodes = current_node->children_as_vector();
+            // a. If the current node has an attached shadow root, set the rendered child nodes to be the child nodes of
+            // the shadow root.
+            if (element->is_shadow_host() && element->shadow_root() && element->shadow_root()->is_connected())
+                child_nodes = element->shadow_root()->children_as_vector();
+            // b. Otherwise, if the current node is a slot with assigned nodes, set the rendered child nodes to be the
+            // assigned nodes of the current node.
+            if (element->is_html_slot_element()) {
+                total_accumulated_text.append(element->text_content().value());
+                child_nodes = static_cast<HTML::HTMLSlotElement const*>(element)->assigned_nodes();
+            }
+            // iv. Name From Each Child: For each rendered child node of the current node
+            for (auto& child_node : child_nodes) {
+                if (!child_node->is_element() && !child_node->is_text())
+                    continue;
                 bool should_add_space = true;
                 const_cast<DOM::Document&>(document).update_layout();
-                auto const* layout_node = child_node.layout_node();
+                auto const* layout_node = child_node->layout_node();
                 if (layout_node) {
                     auto display = layout_node->display();
                     if (display.is_inline_outside() && display.is_flow_inside()) {
                         should_add_space = false;
                     }
                 }
-
-                if (visited_nodes.contains(child_node.unique_id()))
-                    return IterationDecision::Continue;
-
+                if (visited_nodes.contains(child_node->unique_id()))
+                    continue;
                 // a. Set the current node to the child node.
-                current_node = &child_node;
-
+                current_node = child_node;
                 // b. Compute the text alternative of the current node beginning with step 2. Set the result to that text alternative.
                 auto result = MUST(current_node->name_or_description(target, document, visited_nodes, IsDescendant::Yes));
-
                 // Append a space character and the result of each step above to the total accumulated text.
                 // AD-HOC: Doing the space-adding here is in a different order from what the spec states.
                 if (should_add_space)
                     total_accumulated_text.append(' ');
                 // c. Append the result to the accumulated text.
                 total_accumulated_text.append(result);
-
-                return IterationDecision::Continue;
-            });
+            }
             // NOTE: See step ii.b above.
             if (auto after = element->get_pseudo_element_node(CSS::Selector::PseudoElement::Type::After)) {
                 if (after->computed_values().content().alt_text.has_value())
@@ -2427,13 +2517,24 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
     }
 
     // G. Text Node: Otherwise, if the current node is a Text Node, return its textual contents.
-    if (is_text()) {
+    // AD-HOC: The spec doesn’t require ascending through the parent node and ancestor nodes of every text node we
+    // reach — the way we’re doing there. But we implement it this way because the spec algorithm as written doesn’t
+    // appear to achieve what it seems to be intended to achieve. Specifically, the spec algorithm as written doesn’t
+    // cause traversal through element subtrees in way that’s necessary to check for descendants that are referenced by
+    // aria-labelledby or aria-describedby and/or un-hidden. See the comment for substep A above.
+    if (is_text() && (!parent_element() || (parent_element()->is_referenced() || !parent_element()->is_hidden() || !parent_element()->has_hidden_ancestor() || parent_element()->has_referenced_and_hidden_ancestor()))) {
         if (layout_node() && layout_node()->is_text_node())
             return verify_cast<Layout::TextNode>(layout_node())->text_for_rendering();
-        return text_content().value();
+        return text_content().release_value();
     }
 
-    // TODO: H. Otherwise, if the current node is a descendant of an element whose Accessible Name or Accessible Description is being computed, and contains descendants, proceed to 2F.i.
+    // H. Otherwise, if the current node is a descendant of an element whose Accessible Name or Accessible Description
+    // is being computed, and contains descendants, proceed to 2F.i.
+    // AD-HOC: We don’t implement this step here — because is essentially unreachable code in the spec algorithm.
+    // We could never get here without descending through every subtree of an element whose Accessible Name or
+    // Accessible Description is being computed. And in our implementation of substep F about, we’re anyway already
+    // recursively descending through all the child nodes of every element whose Accessible Name or Accessible
+    // Description is being computed, in a way that never leads to this substep H every being hit.
 
     // I. Otherwise, if the current node has a Tooltip attribute, return its value.
     // https://www.w3.org/TR/accname-1.2/#dfn-tooltip-attribute

@@ -3,6 +3,7 @@
  * Copyright (c) 2021-2023, Luke Wilde <lukew@serenityos.org>
  * Copyright (c) 2022-2023, networkException <networkexception@serenityos.org>
  * Copyright (c) 2022-2023, Linus Groh <linusg@serenityos.org>
+ * Copyright (c) 2024, Shannon Booth <shannon@serenityos.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -26,6 +27,7 @@
 #include <LibWeb/Bindings/WindowExposedInterfaces.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/MutationType.h>
+#include <LibWeb/Editing/CommandNames.h>
 #include <LibWeb/HTML/AttributeNames.h>
 #include <LibWeb/HTML/CustomElements/CustomElementDefinition.h>
 #include <LibWeb/HTML/CustomElements/CustomElementReactionNames.h>
@@ -44,6 +46,7 @@
 #include <LibWeb/HTML/TagNames.h>
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/HTML/WindowProxy.h>
+#include <LibWeb/HTML/WorkletGlobalScope.h>
 #include <LibWeb/MathML/TagNames.h>
 #include <LibWeb/MediaSourceExtensions/EventNames.h>
 #include <LibWeb/Namespace.h>
@@ -52,6 +55,7 @@
 #include <LibWeb/Platform/EventLoopPlugin.h>
 #include <LibWeb/SVG/AttributeNames.h>
 #include <LibWeb/SVG/TagNames.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerGlobalScope.h>
 #include <LibWeb/UIEvents/EventNames.h>
 #include <LibWeb/UIEvents/InputTypes.h>
 #include <LibWeb/WebGL/EventNames.h>
@@ -101,6 +105,7 @@ ErrorOr<void> initialize_main_thread_vm(HTML::EventLoop::Type type)
 
     // These strings could potentially live on the VM similar to CommonPropertyNames.
     DOM::MutationType::initialize_strings();
+    Editing::CommandNames::initialize_strings();
     HTML::AttributeNames::initialize_strings();
     HTML::CustomElementReactionNames::initialize_strings();
     HTML::EventNames::initialize_strings();
@@ -161,7 +166,7 @@ ErrorOr<void> initialize_main_thread_vm(HTML::EventLoop::Type type)
         auto& realm = script ? script->realm() : *vm.current_realm();
 
         // 5. Let global be realm's global object.
-        auto* global_mixin = dynamic_cast<HTML::WindowOrWorkerGlobalScopeMixin*>(&realm.global_object());
+        auto* global_mixin = dynamic_cast<HTML::UniversalGlobalScopeMixin*>(&realm.global_object());
         VERIFY(global_mixin);
         auto& global = global_mixin->this_impl();
 
@@ -375,7 +380,7 @@ ErrorOr<void> initialize_main_thread_vm(HTML::EventLoop::Type type)
         return JS::JobCallback::create(*s_main_thread_vm, callable, move(host_defined));
     };
 
-    // 8.1.5.5.1 HostGetImportMetaProperties(moduleRecord), https://html.spec.whatwg.org/multipage/webappapis.html#hostgetimportmetaproperties
+    // 8.1.6.7.1 HostGetImportMetaProperties(moduleRecord), https://html.spec.whatwg.org/multipage/webappapis.html#hostgetimportmetaproperties
     s_main_thread_vm->host_get_import_meta_properties = [](JS::SourceTextModule& module_record) {
         auto& realm = module_record.realm();
         auto& vm = realm.vm();
@@ -416,10 +421,7 @@ ErrorOr<void> initialize_main_thread_vm(HTML::EventLoop::Type type)
         return meta;
     };
 
-    // FIXME: Implement 8.1.5.5.2 HostImportModuleDynamically(referencingScriptOrModule, moduleRequest, promiseCapability), https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically(referencingscriptormodule,-modulerequest,-promisecapability)
-    // FIXME: Implement 8.1.5.5.3 HostResolveImportedModule(referencingScriptOrModule, moduleRequest), https://html.spec.whatwg.org/multipage/webappapis.html#hostresolveimportedmodule(referencingscriptormodule,-modulerequest)
-
-    // 8.1.6.5.2 HostGetSupportedImportAttributes(), https://html.spec.whatwg.org/multipage/webappapis.html#hostgetsupportedimportassertions
+    // 8.1.6.7.2 HostGetSupportedImportAttributes(), https://html.spec.whatwg.org/multipage/webappapis.html#hostgetsupportedimportassertions
     s_main_thread_vm->host_get_supported_import_attributes = []() -> Vector<ByteString> {
         // 1. Return « "type" ».
         return { "type"sv };
@@ -433,7 +435,17 @@ ErrorOr<void> initialize_main_thread_vm(HTML::EventLoop::Type type)
         // 1. Let moduleMapRealm be the current realm.
         auto* module_map_realm = vm.current_realm();
 
-        // FIXME: 2. If moduleMapRealm's global object implements WorkletGlobalScope or ServiceWorkerGlobalScope and loadState is undefined, then:
+        // 2. If moduleMapRealm's global object implements WorkletGlobalScope or ServiceWorkerGlobalScope and loadState is undefined, then:
+        if ((is<HTML::WorkletGlobalScope>(module_map_realm->global_object()) || is<ServiceWorker::ServiceWorkerGlobalScope>(module_map_realm->global_object())) && !load_state) {
+            // 1. Let completion be Completion Record { [[Type]]: throw, [[Value]]: a new TypeError, [[Target]]: empty }.
+            auto completion = JS::throw_completion(JS::TypeError::create(*module_map_realm, "Dynamic Import not available for Worklets or ServiceWorkers"_string));
+
+            // 2. Perform FinishLoadingImportedModule(referrer, moduleRequest, payload, completion).
+            JS::finish_loading_imported_module(referrer, module_request, payload, completion);
+
+            // 3. Return.
+            return;
+        }
 
         // 3. Let referencingScript be null.
         Optional<HTML::Script&> referencing_script;
@@ -458,7 +470,67 @@ ErrorOr<void> initialize_main_thread_vm(HTML::EventLoop::Type type)
             module_map_realm = &referencing_script->realm();
         }
 
-        // FIXME: 7. If referrer is a Cyclic Module Record and moduleRequest is equal to the first element of referrer.[[RequestedModules]], then:
+        // 7. If referrer is a Cyclic Module Record and moduleRequest is equal to the first element of referrer.[[RequestedModules]], then:
+        if (referrer.has<GC::Ref<JS::CyclicModule>>()) {
+            // FIXME: Why do we need to check requested modules is empty here?
+            if (auto const& requested_modules = referrer.get<GC::Ref<JS::CyclicModule>>()->requested_modules(); !requested_modules.is_empty() && module_request == requested_modules.first()) {
+                // 1. For each ModuleRequest record requested of referrer.[[RequestedModules]]:
+                for (auto const& module_request : referrer.get<GC::Ref<JS::CyclicModule>>()->requested_modules()) {
+                    // 1. If moduleRequest.[[Attributes]] contains a Record entry such that entry.[[Key]] is not "type", then:
+                    for (auto const& attribute : module_request.attributes) {
+                        if (attribute.key == "type"sv)
+                            continue;
+
+                        // 1. Let completion be Completion Record { [[Type]]: throw, [[Value]]: a new SyntaxError exception, [[Target]]: empty }.
+                        auto completion = JS::throw_completion(JS::SyntaxError::create(*module_map_realm, "Module request attributes must only contain a type attribute"_string));
+
+                        // 2. Perform FinishLoadingImportedModule(referrer, moduleRequest, payload, completion).
+                        JS::finish_loading_imported_module(referrer, module_request, payload, completion);
+
+                        // 3. Return.
+                        return;
+                    }
+                }
+
+                // 2. Resolve a module specifier given referencingScript and moduleRequest.[[Specifier]], catching any
+                //    exceptions. If they throw an exception, let resolutionError be the thrown exception.
+                auto maybe_exception = HTML::resolve_module_specifier(referencing_script, module_request.module_specifier);
+
+                // 3. If the previous step threw an exception, then:
+                if (maybe_exception.is_exception()) {
+                    // 1. Let completion be Completion Record { [[Type]]: throw, [[Value]]: resolutionError, [[Target]]: empty }.
+                    auto completion = dom_exception_to_throw_completion(main_thread_vm(), maybe_exception.exception());
+
+                    // 2. Perform FinishLoadingImportedModule(referrer, moduleRequest, payload, completion).
+                    JS::finish_loading_imported_module(referrer, module_request, payload, completion);
+
+                    // 3. Return.
+                    return;
+                }
+
+                // 4. Let moduleType be the result of running the module type from module request steps given moduleRequest.
+                auto module_type = HTML::module_type_from_module_request(module_request);
+
+                // 5. If the result of running the module type allowed steps given moduleType and moduleMapRealm is false, then:
+                if (!HTML::module_type_allowed(*module_map_realm, module_type)) {
+                    // 1. Let completion be Completion Record { [[Type]]: throw, [[Value]]: a new TypeError exception, [[Target]]: empty }.
+                    auto completion = JS::throw_completion(JS::SyntaxError::create(*module_map_realm, MUST(String::formatted("Module type '{}' is not supported", module_type))));
+
+                    // 2. Perform FinishLoadingImportedModule(referrer, moduleRequest, payload, completion).
+                    JS::finish_loading_imported_module(referrer, module_request, payload, completion);
+
+                    // 3. Return
+                    return;
+                }
+
+                // Spec-Note: This step is essentially validating all of the requested module specifiers and type attributes
+                //            when the first call to HostLoadImportedModule for a static module dependency list is made, to
+                //            avoid further loading operations in the case any one of the dependencies has a static error.
+                //            We treat a module with unresolvable module specifiers or unsupported type attributes the same
+                //            as one that cannot be parsed; in both cases, a syntactic issue makes it impossible to ever
+                //            contemplate linking the module later.
+            }
+        }
 
         // 8. Disallow further import maps given moduleMapRealm.
         HTML::disallow_further_import_maps(*module_map_realm);
@@ -580,32 +652,29 @@ ErrorOr<void> initialize_main_thread_vm(HTML::EventLoop::Type type)
             // 4. Set settings's execution context to context.
             .execution_context = move(context),
 
-            // 5. Set settings's principal realm to O's associated realm
-            .principal_realm = object.shape().realm(),
+            // 5. Set settings's principal realm to O's associated realm's principal realm
+            .principal_realm = HTML::principal_realm(object.shape().realm()),
 
-            // 6. Set settings's underlying realm to realm.
-            .underlying_realm = realm,
-
-            // 7. Set settings's module map to a new module map, initially empty.
+            // 6. Set settings's module map to a new module map, initially empty.
             .module_map = realm.create<HTML::ModuleMap>(),
         };
 
-        // 8. Set realm.[[HostDefined]] to settings.
+        // 7. Set realm.[[HostDefined]] to settings.
         realm.set_host_defined(make<Bindings::SyntheticHostDefined>(move(settings), realm.create<Bindings::Intrinsics>(realm)));
 
-        // 9. Set realm.[[GlobalObject]] to globalObject.
+        // 8. Set realm.[[GlobalObject]] to globalObject.
         realm.set_global_object(global_object);
 
-        // 10. Set realm.[[GlobalEnv]] to NewGlobalEnvironment(globalObject, globalObject).
+        // 9. Set realm.[[GlobalEnv]] to NewGlobalEnvironment(globalObject, globalObject).
         realm.set_global_environment(realm.heap().allocate<JS::GlobalEnvironment>(global_object, global_object));
 
-        // 11. Perform ? SetDefaultGlobalBindings(realm).
+        // 10. Perform ? SetDefaultGlobalBindings(realm).
         set_default_global_bindings(realm);
 
         // NOTE: This needs to be done after initialization so that the realm has an intrinsics in its [[HostDefined]]
         global_object->initialize_web_interfaces();
 
-        // 12. Return NormalCompletion(unused).
+        // 11. Return NormalCompletion(unused).
         return {};
     };
 
@@ -739,24 +808,32 @@ void invoke_custom_element_reactions(Vector<GC::Root<DOM::Element>>& element_que
             // 1. Remove the first element of reactions, and let reaction be that element. Switch on reaction's type:
             auto reaction = reactions->take_first();
 
-            auto maybe_exception = reaction.visit(
-                [&](DOM::CustomElementUpgradeReaction const& custom_element_upgrade_reaction) -> JS::ThrowCompletionOr<void> {
+            reaction.visit(
+                [&](DOM::CustomElementUpgradeReaction const& custom_element_upgrade_reaction) -> void {
                     // -> upgrade reaction
                     //      Upgrade element using reaction's custom element definition.
-                    return element->upgrade_element(*custom_element_upgrade_reaction.custom_element_definition);
+                    auto maybe_exception = element->upgrade_element(*custom_element_upgrade_reaction.custom_element_definition);
+                    // If this throws an exception, catch it, and report it for reaction's custom element definition's constructor's corresponding JavaScript object's associated realm's global object.
+                    if (maybe_exception.is_error()) {
+                        // FIXME: Should it be easier to get to report an exception from an IDL callback?
+                        auto& callback = custom_element_upgrade_reaction.custom_element_definition->constructor();
+                        auto& realm = callback.callback->shape().realm();
+                        auto& global = realm.global_object();
+
+                        auto* window_or_worker = dynamic_cast<HTML::WindowOrWorkerGlobalScopeMixin*>(&global);
+                        VERIFY(window_or_worker);
+                        window_or_worker->report_an_exception(maybe_exception.error_value());
+                    }
                 },
-                [&](DOM::CustomElementCallbackReaction& custom_element_callback_reaction) -> JS::ThrowCompletionOr<void> {
+                [&](DOM::CustomElementCallbackReaction& custom_element_callback_reaction) -> void {
                     // -> callback reaction
                     //      Invoke reaction's callback function with reaction's arguments, and with element as the callback this value.
                     auto result = WebIDL::invoke_callback(*custom_element_callback_reaction.callback, element.ptr(), custom_element_callback_reaction.arguments);
+                    // FIXME: The error from CustomElementCallbackReaction is supposed
+                    //     to use the new steps for IDL callback error reporting
                     if (result.is_abrupt())
-                        return result.release_error();
-                    return {};
+                        HTML::report_exception(result, element->realm());
                 });
-
-            // If this throws an exception, catch it, and report the exception.
-            if (maybe_exception.is_throw_completion())
-                HTML::report_exception(maybe_exception, element->realm());
         }
     }
 }
