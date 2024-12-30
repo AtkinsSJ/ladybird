@@ -1913,14 +1913,14 @@ RefPtr<CustomIdentStyleValue> Parser::parse_custom_ident_value(TokenStream<Compo
     return CustomIdentStyleValue::create(custom_ident);
 }
 
-RefPtr<CalculatedStyleValue> Parser::parse_calculated_value(ComponentValue const& component_value)
+RefPtr<CalculatedStyleValue> Parser::parse_calculated_value(ComponentValue const& component_value, CalculationContext const& context)
 {
     if (!component_value.is_function())
         return nullptr;
 
     auto const& function = component_value.function();
 
-    auto function_node = parse_a_calc_function_node(function);
+    auto function_node = parse_a_calc_function_node(function, context);
     if (!function_node)
         return nullptr;
 
@@ -1928,15 +1928,15 @@ RefPtr<CalculatedStyleValue> Parser::parse_calculated_value(ComponentValue const
     if (!function_type.has_value())
         return nullptr;
 
-    return CalculatedStyleValue::create(function_node.release_nonnull(), function_type.release_value());
+    return CalculatedStyleValue::create(function_node.release_nonnull(), function_type.release_value(), context);
 }
 
-OwnPtr<CalculationNode> Parser::parse_a_calc_function_node(Function const& function)
+OwnPtr<CalculationNode> Parser::parse_a_calc_function_node(Function const& function, CalculationContext const& context)
 {
     if (function.name.equals_ignoring_ascii_case("calc"sv))
-        return parse_a_calculation(function.value);
+        return parse_a_calculation(function.value, context);
 
-    if (auto maybe_function = parse_math_function(function))
+    if (auto maybe_function = parse_math_function(function, context))
         return maybe_function;
 
     return nullptr;
@@ -9128,7 +9128,7 @@ LengthOrCalculated Parser::Parser::parse_as_sizes_attribute(DOM::Element const& 
     return Length(100, Length::Type::Vw);
 }
 
-OwnPtr<CalculationNode> Parser::convert_to_calculation_node(CalcParsing::Node const& node)
+OwnPtr<CalculationNode> Parser::convert_to_calculation_node(CalcParsing::Node const& node, CalculationContext const& context)
 {
     return node.visit(
         [this](NonnullOwnPtr<CalcParsing::ProductNode> const& product_node) -> OwnPtr<CalculationNode> {
@@ -9136,7 +9136,7 @@ OwnPtr<CalculationNode> Parser::convert_to_calculation_node(CalcParsing::Node co
             children.ensure_capacity(product_node->children.size());
 
             for (auto const& child : product_node->children) {
-                if (auto child_as_node = convert_to_calculation_node(child)) {
+                if (auto child_as_node = convert_to_calculation_node(child, context)) {
                     children.append(child_as_node.release_nonnull());
                 } else {
                     return nullptr;
@@ -9150,7 +9150,7 @@ OwnPtr<CalculationNode> Parser::convert_to_calculation_node(CalcParsing::Node co
             children.ensure_capacity(sum_node->children.size());
 
             for (auto const& child : sum_node->children) {
-                if (auto child_as_node = convert_to_calculation_node(child)) {
+                if (auto child_as_node = convert_to_calculation_node(child, context)) {
                     children.append(child_as_node.release_nonnull());
                 } else {
                     return nullptr;
@@ -9160,34 +9160,31 @@ OwnPtr<CalculationNode> Parser::convert_to_calculation_node(CalcParsing::Node co
             return SumCalculationNode::create(move(children));
         },
         [this](NonnullOwnPtr<CalcParsing::InvertNode> const& invert_node) -> OwnPtr<CalculationNode> {
-            if (auto child_as_node = convert_to_calculation_node(invert_node->child))
+            if (auto child_as_node = convert_to_calculation_node(invert_node->child, context))
                 return InvertCalculationNode::create(child_as_node.release_nonnull());
             return nullptr;
         },
         [this](NonnullOwnPtr<CalcParsing::NegateNode> const& negate_node) -> OwnPtr<CalculationNode> {
-            if (auto child_as_node = convert_to_calculation_node(negate_node->child))
+            if (auto child_as_node = convert_to_calculation_node(negate_node->child, context))
                 return NegateCalculationNode::create(child_as_node.release_nonnull());
             return nullptr;
         },
-        [](Number const& number) -> OwnPtr<CalculationNode> {
-            return NumericCalculationNode::create(number);
+        [context](Number const& number) -> OwnPtr<CalculationNode> {
+            return NumericCalculationNode::create(number, context);
         },
-        [this](Dimension const& dimension) -> OwnPtr<CalculationNode> {
+        [this, context](Dimension const& dimension) -> OwnPtr<CalculationNode> {
             if (dimension.is_angle())
-                return NumericCalculationNode::create(dimension.angle());
+                return NumericCalculationNode::create(dimension.angle(), context);
             if (dimension.is_frequency())
-                return NumericCalculationNode::create(dimension.frequency());
+                return NumericCalculationNode::create(dimension.frequency(), context);
             if (dimension.is_length())
-                return NumericCalculationNode::create(dimension.length());
-            if (dimension.is_percentage()) {
-                // FIXME: Figure this out in non-property contexts
-                auto percentage_resolved_type = property_resolves_percentages_relative_to(m_context.current_property_id());
-                return NumericCalculationNode::create(dimension.percentage(), percentage_resolved_type);
-            }
+                return NumericCalculationNode::create(dimension.length(), context);
+            if (dimension.is_percentage())
+                return NumericCalculationNode::create(dimension.percentage(), context);
             if (dimension.is_resolution())
-                return NumericCalculationNode::create(dimension.resolution());
+                return NumericCalculationNode::create(dimension.resolution(), context);
             if (dimension.is_time())
-                return NumericCalculationNode::create(dimension.time());
+                return NumericCalculationNode::create(dimension.time(), context);
             if (dimension.is_flex()) {
                 // https://www.w3.org/TR/css3-grid-layout/#fr-unit
                 // NOTE: <flex> values are not <length>s (nor are they compatible with <length>s, like some <percentage> values),
@@ -9239,7 +9236,7 @@ OwnPtr<CalculationNode> Parser::convert_to_calculation_node(CalcParsing::Node co
 }
 
 // https://drafts.csswg.org/css-values-4/#parse-a-calculation
-OwnPtr<CalculationNode> Parser::parse_a_calculation(Vector<ComponentValue> const& original_values)
+OwnPtr<CalculationNode> Parser::parse_a_calculation(Vector<ComponentValue> const& original_values, CalculationContext const& context)
 {
     // 1. Discard any <whitespace-token>s from values.
     // 2. An item in values is an “operator” if it’s a <delim-token> with the value "+", "-", "*", or "/". Otherwise, it’s a “value”.
@@ -9370,7 +9367,7 @@ OwnPtr<CalculationNode> Parser::parse_a_calculation(Vector<ComponentValue> const
 
     // 5. At this point values is a tree of Sum, Product, Negate, and Invert nodes, with other types of values at the leaf nodes. Process the leaf nodes.
     // NOTE: We process leaf nodes as part of this conversion.
-    auto calculation_tree = convert_to_calculation_node(*single_value);
+    auto calculation_tree = convert_to_calculation_node(*single_value, context);
     if (!calculation_tree)
         return nullptr;
 

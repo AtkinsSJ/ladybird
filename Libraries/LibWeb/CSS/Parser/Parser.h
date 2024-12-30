@@ -273,11 +273,11 @@ private:
     };
     Optional<PropertyAndValue> parse_css_value_for_properties(ReadonlySpan<PropertyID>, TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_builtin_value(TokenStream<ComponentValue>&);
-    RefPtr<CalculatedStyleValue> parse_calculated_value(ComponentValue const&);
+    RefPtr<CalculatedStyleValue> parse_calculated_value(ComponentValue const&, CalculationContext const&);
     RefPtr<CustomIdentStyleValue> parse_custom_ident_value(TokenStream<ComponentValue>&, std::initializer_list<StringView> blacklist);
     // NOTE: Implemented in generated code. (GenerateCSSMathFunctions.cpp)
-    OwnPtr<CalculationNode> parse_math_function(Function const&);
-    OwnPtr<CalculationNode> parse_a_calc_function_node(Function const&);
+    OwnPtr<CalculationNode> parse_math_function(Function const&, CalculationContext const&);
+    OwnPtr<CalculationNode> parse_a_calc_function_node(Function const&, CalculationContext const&);
     RefPtr<CSSStyleValue> parse_keyword_value(TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_hue_none_value(TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_solidus_and_alpha_value(TokenStream<ComponentValue>&);
@@ -395,8 +395,8 @@ private:
     RefPtr<CSSStyleValue> parse_grid_area_shorthand_value(TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_grid_shorthand_value(TokenStream<ComponentValue>&);
 
-    OwnPtr<CalculationNode> convert_to_calculation_node(CalcParsing::Node const&);
-    OwnPtr<CalculationNode> parse_a_calculation(Vector<ComponentValue> const&);
+    OwnPtr<CalculationNode> convert_to_calculation_node(CalcParsing::Node const&, CalculationContext const&);
+    OwnPtr<CalculationNode> parse_a_calculation(Vector<ComponentValue> const&, CalculationContext const&);
 
     ParseErrorOr<NonnullRefPtr<Selector>> parse_complex_selector(TokenStream<ComponentValue>&, SelectorType);
     ParseErrorOr<Optional<Selector::CompoundSelector>> parse_compound_selector(TokenStream<ComponentValue>&);
