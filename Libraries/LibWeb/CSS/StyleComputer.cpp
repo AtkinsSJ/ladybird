@@ -27,6 +27,7 @@
 #include <LibGfx/Font/WOFF2/Loader.h>
 #include <LibWeb/Animations/AnimationEffect.h>
 #include <LibWeb/Animations/DocumentTimeline.h>
+#include <LibWeb/Bindings/MainThreadVM.h>
 #include <LibWeb/CSS/AnimationEvent.h>
 #include <LibWeb/CSS/CSSAnimation.h>
 #include <LibWeb/CSS/CSSFontFaceRule.h>
@@ -75,6 +76,7 @@
 #include <LibWeb/HTML/HTMLHtmlElement.h>
 #include <LibWeb/HTML/Parser/HTMLParser.h>
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
+#include <LibWeb/HTML/Window.h>
 #include <LibWeb/HighResolutionTime/TimeOrigin.h>
 #include <LibWeb/Layout/Node.h>
 #include <LibWeb/MimeSniff/MimeType.h>
@@ -179,7 +181,13 @@ StyleComputer::StyleComputer(DOM::Document& document)
     m_qualified_layer_names_in_order.append({});
 }
 
-StyleComputer::~StyleComputer() = default;
+StyleComputer::~StyleComputer()
+{
+    m_default_style_sheet = nullptr;
+    m_quirks_mode_style_sheet = nullptr;
+    m_mathml_style_sheet = nullptr;
+    m_svg_style_sheet = nullptr;
+}
 
 FontLoader::FontLoader(StyleComputer& style_computer, FlyString family_name, Vector<Gfx::UnicodeRange> unicode_ranges, Vector<URL::URL> urls, Function<void(FontLoader const&)> on_load, Function<void()> on_fail)
     : m_style_computer(style_computer)
@@ -301,44 +309,41 @@ struct StyleComputer::MatchingFontCandidate {
     }
 };
 
-static CSSStyleSheet& default_stylesheet(DOM::Document const& document)
+CSSStyleSheet& StyleComputer::default_stylesheet() const
 {
-    static GC::Root<CSSStyleSheet> sheet;
-    if (!sheet.cell()) {
+    if (m_default_style_sheet.is_null()) {
         extern String default_stylesheet_source;
-        sheet = GC::make_root(parse_css_stylesheet(CSS::Parser::ParsingContext(document), default_stylesheet_source));
+        dbgln("######### Making a new default stylesheet! ########");
+        m_default_style_sheet = GC::make_root(parse_css_stylesheet(Parser::ParsingContext(document()), default_stylesheet_source));
     }
-    return *sheet;
+    return *m_default_style_sheet;
 }
 
-static CSSStyleSheet& quirks_mode_stylesheet(DOM::Document const& document)
+CSSStyleSheet& StyleComputer::quirks_mode_stylesheet() const
 {
-    static GC::Root<CSSStyleSheet> sheet;
-    if (!sheet.cell()) {
+    if (m_quirks_mode_style_sheet.is_null()) {
         extern String quirks_mode_stylesheet_source;
-        sheet = GC::make_root(parse_css_stylesheet(CSS::Parser::ParsingContext(document), quirks_mode_stylesheet_source));
+        m_quirks_mode_style_sheet = GC::make_root(parse_css_stylesheet(Parser::ParsingContext(document()), quirks_mode_stylesheet_source));
     }
-    return *sheet;
+    return *m_quirks_mode_style_sheet;
 }
 
-static CSSStyleSheet& mathml_stylesheet(DOM::Document const& document)
+CSSStyleSheet& StyleComputer::mathml_stylesheet() const
 {
-    static GC::Root<CSSStyleSheet> sheet;
-    if (!sheet.cell()) {
+    if (m_mathml_style_sheet.is_null()) {
         extern String mathml_stylesheet_source;
-        sheet = GC::make_root(parse_css_stylesheet(CSS::Parser::ParsingContext(document), mathml_stylesheet_source));
+        m_mathml_style_sheet = GC::make_root(parse_css_stylesheet(Parser::ParsingContext(document()), mathml_stylesheet_source));
     }
-    return *sheet;
+    return *m_mathml_style_sheet;
 }
 
-static CSSStyleSheet& svg_stylesheet(DOM::Document const& document)
+CSSStyleSheet& StyleComputer::svg_stylesheet() const
 {
-    static GC::Root<CSSStyleSheet> sheet;
-    if (!sheet.cell()) {
+    if (m_svg_style_sheet.is_null()) {
         extern String svg_stylesheet_source;
-        sheet = GC::make_root(parse_css_stylesheet(CSS::Parser::ParsingContext(document), svg_stylesheet_source));
+        m_svg_style_sheet = GC::make_root(parse_css_stylesheet(Parser::ParsingContext(document()), svg_stylesheet_source));
     }
-    return *sheet;
+    return *m_svg_style_sheet;
 }
 
 Optional<String> StyleComputer::user_agent_style_sheet_source(StringView name)
@@ -363,11 +368,11 @@ template<typename Callback>
 void StyleComputer::for_each_stylesheet(CascadeOrigin cascade_origin, Callback callback) const
 {
     if (cascade_origin == CascadeOrigin::UserAgent) {
-        callback(default_stylesheet(document()), {});
+        callback(default_stylesheet(), {});
         if (document().in_quirks_mode())
-            callback(quirks_mode_stylesheet(document()), {});
-        callback(mathml_stylesheet(document()), {});
-        callback(svg_stylesheet(document()), {});
+            callback(quirks_mode_stylesheet(), {});
+        callback(mathml_stylesheet(), {});
+        callback(svg_stylesheet(), {});
     }
     if (cascade_origin == CascadeOrigin::User) {
         if (m_user_style_sheet)

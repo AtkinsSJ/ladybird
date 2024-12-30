@@ -216,6 +216,10 @@ private:
 
     template<typename Callback>
     void for_each_stylesheet(CascadeOrigin, Callback) const;
+    CSSStyleSheet& default_stylesheet() const;
+    CSSStyleSheet& quirks_mode_stylesheet() const;
+    CSSStyleSheet& mathml_stylesheet() const;
+    CSSStyleSheet& svg_stylesheet() const;
 
     [[nodiscard]] CSSPixelRect viewport_rect() const { return m_viewport_rect; }
 
@@ -278,6 +282,10 @@ private:
     OwnPtr<RuleCache> m_user_rule_cache;
     OwnPtr<RuleCache> m_user_agent_rule_cache;
     GC::Root<CSSStyleSheet> m_user_style_sheet;
+    GC::Root<CSSStyleSheet> mutable m_default_style_sheet;
+    GC::Root<CSSStyleSheet> mutable m_quirks_mode_style_sheet;
+    GC::Root<CSSStyleSheet> mutable m_mathml_style_sheet;
+    GC::Root<CSSStyleSheet> mutable m_svg_style_sheet;
 
     using FontLoaderList = Vector<NonnullOwnPtr<FontLoader>>;
     HashMap<OwnFontFaceKey, FontLoaderList> m_loaded_fonts;
