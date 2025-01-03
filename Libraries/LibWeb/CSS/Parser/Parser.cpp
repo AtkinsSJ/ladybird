@@ -9649,21 +9649,48 @@ bool Parser::expand_unresolved_values(DOM::Element& element, FlyString const& pr
 bool Parser::substitute_attr_function(DOM::Element& element, FlyString const& property_name, Function const& attr_function, Vector<ComponentValue>& dest)
 {
     // First, parse the arguments to attr():
-    // attr() = attr( <q-name> <attr-type>? , <declaration-value>?)
-    // <attr-type> = string | url | ident | color | number | percentage | length | angle | time | frequency | flex | <dimension-unit>
+    // attr() = attr( <attr-name> <attr-type>? , <declaration-value>?)
+    // https://drafts.csswg.org/css-values-5/#funcdef-attr
+
     TokenStream attr_contents { attr_function.value };
     attr_contents.discard_whitespace();
     if (!attr_contents.has_next_token())
         return false;
 
     // - Attribute name
-    // FIXME: Support optional attribute namespace
-    if (!attr_contents.next_token().is(Token::Type::Ident))
+    // <attr-name> = [ <ident-token>? '|' ]? <ident-token>
+    Optional<FlyString> attribute_namespace;
+    FlyString attribute_name;
+
+    auto& start_of_name = attr_contents.consume_a_token();
+    if (start_of_name.is_delim('|')) {
+        // Namespace is blank
+        if (!attr_contents.next_token().is(Token::Type::Ident))
+            return false;
+        attribute_name = attr_contents.consume_a_token().token().ident();
+    } else if (start_of_name.is(Token::Type::Ident)) {
+        // We're assuming whitespace is not allowed inside the qualified name, which is the case inside selectors. But the spec doesn't say.
+        if (attr_contents.next_token().is_delim('|')) {
+            // Namespace | Name
+            attribute_namespace = start_of_name.token().ident();
+            attr_contents.discard_a_token(); // '|'
+
+            if (!attr_contents.next_token().is(Token::Type::Ident))
+                return false;
+            attribute_name = attr_contents.consume_a_token().token().ident();
+        } else {
+            // Just name
+            attribute_name = start_of_name.token().ident();
+        }
+    } else {
         return false;
-    auto attribute_name = attr_contents.consume_a_token().token().ident();
+    }
     attr_contents.discard_whitespace();
 
     // - Attribute type (optional)
+    // <attr-type> = type( <syntax> ) | string | <attr-unit>
+    // The <attr-unit> production matches any identifier that is an ASCII case-insensitive match for the name of a CSS dimension unit, such as px, or the <delim-token> %.
+    // FIXME: Implement the type() function
     auto attribute_type = "string"_fly_string;
     if (attr_contents.next_token().is(Token::Type::Ident)) {
         attribute_type = attr_contents.consume_a_token().token().ident();
@@ -9671,20 +9698,23 @@ bool Parser::substitute_attr_function(DOM::Element& element, FlyString const& pr
     }
 
     // - Comma, then fallback values (optional)
+    // FIXME: Properly parse a <declaration-value>. Currently we just use whatever is left in attr_contents, but some tokens are invalid there.
     bool has_fallback_values = false;
     if (attr_contents.has_next_token()) {
         if (!attr_contents.next_token().is(Token::Type::Comma))
             return false;
-        (void)attr_contents.consume_a_token(); // Comma
+        attr_contents.discard_a_token(); // Comma
         has_fallback_values = true;
     }
 
     // Then, run the substitution algorithm:
+    // FIXME: The substitution algorithm has changed, update this to the current spec.
+    // https://drafts.csswg.org/css-values-5/#resolve-an-attr-function
 
     // 1. If the attr() function has a substitution value, replace the attr() function by the substitution value.
     // https://drafts.csswg.org/css-values-5/#attr-types
-    if (element.has_attribute(attribute_name)) {
-        auto attribute_value = element.get_attribute_value(attribute_name);
+    if (element.has_attribute_ns(attribute_namespace, attribute_name)) {
+        auto attribute_value = element.get_attribute_value(attribute_name, attribute_namespace);
         if (attribute_type.equals_ignoring_ascii_case("angle"_fly_string)) {
             // Parse a component value from the attribute’s value.
             auto component_value = Parser::Parser::create(m_context, attribute_value).parse_as_component_value();
