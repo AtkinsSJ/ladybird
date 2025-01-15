@@ -162,13 +162,13 @@ public:
     Optional<CSS::UserSelect> user_select() const;
     Optional<CSS::Isolation> isolation() const;
 
-    static Vector<CSS::Transformation> transformations_for_style_value(CSSStyleValue const& value);
-    Vector<CSS::Transformation> transformations() const;
+    static Vector<NonnullRefPtr<TransformationStyleValue>> transformations_for_style_value(CSSStyleValue const& value);
+    Vector<NonnullRefPtr<TransformationStyleValue>> transformations() const;
     Optional<CSS::TransformBox> transform_box() const;
     CSS::TransformOrigin transform_origin() const;
-    Optional<CSS::Transformation> rotate() const;
-    Optional<CSS::Transformation> translate() const;
-    Optional<CSS::Transformation> scale() const;
+    RefPtr<TransformationStyleValue> rotate() const;
+    RefPtr<TransformationStyleValue> translate() const;
+    RefPtr<TransformationStyleValue> scale() const;
 
     Optional<CSS::MaskType> mask_type() const;
     Color stop_color() const;

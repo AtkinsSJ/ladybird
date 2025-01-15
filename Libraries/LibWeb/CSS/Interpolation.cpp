@@ -117,55 +117,13 @@ RefPtr<CSSStyleValue const> interpolate_transform(DOM::Element& element, CSSStyl
 {
     // Note that the spec uses column-major notation, so all the matrix indexing is reversed.
 
-    static constexpr auto make_transformation = [](TransformationStyleValue const& transformation) -> Optional<Transformation> {
-        Vector<TransformValue> values;
-
-        for (auto const& value : transformation.values()) {
-            switch (value->type()) {
-            case CSSStyleValue::Type::Angle:
-                values.append(AngleOrCalculated { value->as_angle().angle() });
-                break;
-            case CSSStyleValue::Type::Calculated: {
-                auto& calculated = value->as_calculated();
-                if (calculated.resolves_to_angle()) {
-                    values.append(AngleOrCalculated { calculated });
-                } else if (calculated.resolves_to_length_percentage()) {
-                    values.append(LengthPercentage { calculated });
-                } else if (calculated.resolves_to_number()) {
-                    values.append(NumberPercentage { calculated });
-                } else {
-                    dbgln("Calculation `{}` inside {} transform-function is not a recognized type", calculated.to_string(CSSStyleValue::SerializationMode::Normal), to_string(transformation.transform_function()));
-                    return {};
-                }
-                break;
-            }
-            case CSSStyleValue::Type::Length:
-                values.append(LengthPercentage { value->as_length().length() });
-                break;
-            case CSSStyleValue::Type::Percentage:
-                values.append(LengthPercentage { value->as_percentage().percentage() });
-                break;
-            case CSSStyleValue::Type::Number:
-                values.append(NumberPercentage { Number(Number::Type::Number, value->as_number().number()) });
-                break;
-            default:
-                return {};
-            }
-        }
-
-        return Transformation { transformation.transform_function(), move(values) };
-    };
-
-    static constexpr auto transformation_style_value_to_matrix = [](DOM::Element& element, TransformationStyleValue const& value) -> Optional<FloatMatrix4x4> {
-        auto transformation = make_transformation(value);
-        if (!transformation.has_value())
-            return {};
+    static constexpr auto transformation_style_value_to_matrix = [](DOM::Element& element, TransformationStyleValue const& transformation) -> Optional<FloatMatrix4x4> {
         Optional<Painting::PaintableBox const&> paintable_box;
         if (auto layout_node = element.layout_node()) {
             if (auto paintable = layout_node->first_paintable(); paintable && is<Painting::PaintableBox>(paintable))
                 paintable_box = *static_cast<Painting::PaintableBox*>(paintable);
         }
-        if (auto matrix = transformation->to_matrix(paintable_box); !matrix.is_error())
+        if (auto matrix = transformation.to_matrix(paintable_box); !matrix.is_error())
             return matrix.value();
         return {};
     };

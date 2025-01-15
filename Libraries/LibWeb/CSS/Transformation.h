@@ -15,11 +15,9 @@
 
 namespace Web::CSS {
 
-using TransformValue = Variant<AngleOrCalculated, LengthPercentage, NumberPercentage>;
-
 class Transformation {
 public:
-    Transformation(TransformFunction function, Vector<TransformValue>&& values);
+    Transformation(TransformFunction function, Vector<NonnullRefPtr<CSSStyleValue>>&& values);
 
     TransformFunction function() const { return m_function; }
 
@@ -27,7 +25,7 @@ public:
 
 private:
     TransformFunction m_function;
-    Vector<TransformValue> m_values;
+    Vector<NonnullRefPtr<CSSStyleValue>> m_values;
 };
 
 }

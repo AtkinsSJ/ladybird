@@ -11,55 +11,254 @@
 #include "TransformationStyleValue.h"
 #include <AK/StringBuilder.h>
 #include <LibWeb/CSS/StyleValues/AngleStyleValue.h>
+#include <LibWeb/CSS/StyleValues/CalculatedStyleValue.h>
 #include <LibWeb/CSS/StyleValues/LengthStyleValue.h>
 #include <LibWeb/CSS/StyleValues/NumberStyleValue.h>
 #include <LibWeb/CSS/StyleValues/PercentageStyleValue.h>
-#include <LibWeb/CSS/Transformation.h>
+#include <LibWeb/Painting/PaintableBox.h>
 
 namespace Web::CSS {
 
-Transformation TransformationStyleValue::to_transformation() const
+ErrorOr<FloatMatrix4x4> TransformationStyleValue::to_matrix(Optional<Painting::PaintableBox const&> paintable_box) const
 {
+    auto count = m_properties.values.size();
     auto function_metadata = transform_function_metadata(m_properties.transform_function);
-    Vector<TransformValue> values;
-    size_t argument_index = 0;
-    for (auto& transformation_value : m_properties.values) {
-        if (transformation_value->is_calculated()) {
-            auto& calculated = transformation_value->as_calculated();
-            if (calculated.resolves_to_length_percentage()) {
-                values.append(LengthPercentage { calculated });
-            } else if (calculated.resolves_to_percentage()) {
-                // FIXME: Maybe transform this for loop to always check the metadata for the correct types
-                if (function_metadata.parameters[argument_index].type == TransformFunctionParameterType::NumberPercentage) {
-                    values.append(NumberPercentage { calculated.resolve_percentage().value() });
-                } else {
-                    values.append(LengthPercentage { calculated.resolve_percentage().value() });
-                }
-            } else if (calculated.resolves_to_number()) {
-                values.append({ Number(Number::Type::Number, calculated.resolve_number().value()) });
-            } else if (calculated.resolves_to_angle()) {
-                values.append({ calculated.resolve_angle().value() });
-            } else {
-                dbgln("FIXME: Unsupported calc value in transform! {}", calculated.to_string(SerializationMode::Normal));
+
+    auto length_to_px = [&](Length const& length) -> ErrorOr<float> {
+        if (paintable_box.has_value())
+            return length.to_px(paintable_box->layout_node());
+        if (length.is_absolute())
+            return length.absolute_length_to_px();
+        return Error::from_string_literal("Transform contains non absolute units");
+    };
+
+    auto get_value = [&](size_t argument_index, CSSPixels const& reference_length = 0) -> ErrorOr<float> {
+        auto& transformation_value = *m_properties.values[argument_index];
+
+        if (transformation_value.is_calculated()) {
+            auto& calculated = transformation_value.as_calculated();
+            switch (function_metadata.parameters[argument_index].type) {
+            case TransformFunctionParameterType::Angle: {
+                if (!calculated.resolves_to_angle())
+                    return Error::from_string_literal("Calculated angle parameter to transform function doesn't resolve to an angle.");
+                return calculated.resolve_angle().value().to_radians();
             }
-        } else if (transformation_value->is_length()) {
-            values.append({ transformation_value->as_length().length() });
-        } else if (transformation_value->is_percentage()) {
-            if (function_metadata.parameters[argument_index].type == TransformFunctionParameterType::NumberPercentage) {
-                values.append(NumberPercentage { transformation_value->as_percentage().percentage() });
-            } else {
-                values.append(LengthPercentage { transformation_value->as_percentage().percentage() });
+            case TransformFunctionParameterType::Length:
+            case TransformFunctionParameterType::LengthNone: {
+                if (!calculated.resolves_to_length())
+                    return Error::from_string_literal("Calculated length parameter to transform function doesn't resolve to a length.");
+                if (!paintable_box.has_value())
+                    return Error::from_string_literal("Can't resolve transform-function: Need a paintable box to resolve calculated lengths");
+                auto length_resolution_context = Length::ResolutionContext::for_layout_node(paintable_box->layout_node());
+                return length_to_px(calculated.resolve_length(length_resolution_context).value());
             }
-        } else if (transformation_value->is_number()) {
-            values.append({ Number(Number::Type::Number, transformation_value->as_number().number()) });
-        } else if (transformation_value->is_angle()) {
-            values.append({ transformation_value->as_angle().angle() });
-        } else {
-            dbgln("FIXME: Unsupported value in transform! {}", transformation_value->to_string(SerializationMode::Normal));
+            case TransformFunctionParameterType::LengthPercentage: {
+                if (!calculated.resolves_to_length_percentage())
+                    return Error::from_string_literal("Calculated length-percentage parameter to transform function doesn't resolve to a length-percentage.");
+                if (!paintable_box.has_value())
+                    return Error::from_string_literal("Can't resolve transform-function: Need a paintable box to resolve calculated lengths");
+                auto length_resolution_context = Length::ResolutionContext::for_layout_node(paintable_box->layout_node());
+                auto length = calculated.resolve_length_percentage(length_resolution_context, Length::make_px(reference_length)).value();
+                return length_to_px(length);
+            }
+            case TransformFunctionParameterType::Number: {
+                if (!calculated.resolves_to_number())
+                    return Error::from_string_literal("Calculated number parameter to transform function doesn't resolve to a number.");
+                return calculated.resolve_number().value();
+            }
+            case TransformFunctionParameterType::NumberPercentage: {
+                if (calculated.resolves_to_number())
+                    return calculated.resolve_number().value();
+                if (calculated.resolves_to_percentage())
+                    return calculated.resolve_percentage().value().as_fraction();
+                return Error::from_string_literal("Calculated number/percentage parameter to transform function doesn't resolve to a number or percentage.");
+            }
+            }
         }
-        argument_index++;
+
+        if (transformation_value.is_length())
+            return length_to_px(transformation_value.as_length().length());
+
+        if (transformation_value.is_percentage()) {
+            if (function_metadata.parameters[argument_index].type == TransformFunctionParameterType::NumberPercentage) {
+                return transformation_value.as_percentage().percentage().as_fraction();
+            }
+            return length_to_px(Length::make_px(reference_length).percentage_of(transformation_value.as_percentage().percentage()));
+        }
+
+        if (transformation_value.is_number())
+            return transformation_value.as_number().number();
+
+        if (transformation_value.is_angle())
+            return transformation_value.as_angle().angle().to_radians();
+
+        dbgln("FIXME: Unsupported value in transform! {}", transformation_value.to_string(SerializationMode::Normal));
+        return Error::from_string_literal("Unsupported value in transform function");
+    };
+
+    CSSPixels width = 1;
+    CSSPixels height = 1;
+    if (paintable_box.has_value()) {
+        auto reference_box = paintable_box->transform_box_rect();
+        width = reference_box.width();
+        height = reference_box.height();
     }
-    return Transformation { m_properties.transform_function, move(values) };
+
+    switch (m_properties.transform_function) {
+    case TransformFunction::Perspective:
+        // https://drafts.csswg.org/css-transforms-2/#perspective
+        // Count is zero when null parameter
+        if (count == 1) {
+            // FIXME: Add support for the 'perspective-origin' CSS property.
+            auto distance = TRY(get_value(0));
+            return Gfx::FloatMatrix4x4(1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, -1 / (distance <= 0 ? 1 : distance), 1);
+        }
+        return Gfx::FloatMatrix4x4(1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1);
+    case TransformFunction::Matrix:
+        if (count == 6)
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), TRY(get_value(2)), 0, TRY(get_value(4)),
+                TRY(get_value(1)), TRY(get_value(3)), 0, TRY(get_value(5)),
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::Matrix3d:
+        if (count == 16)
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), TRY(get_value(4)), TRY(get_value(8)), TRY(get_value(12)),
+                TRY(get_value(1)), TRY(get_value(5)), TRY(get_value(9)), TRY(get_value(13)),
+                TRY(get_value(2)), TRY(get_value(6)), TRY(get_value(10)), TRY(get_value(14)),
+                TRY(get_value(3)), TRY(get_value(7)), TRY(get_value(11)), TRY(get_value(15)));
+        break;
+    case TransformFunction::Translate:
+        if (count == 1)
+            return Gfx::FloatMatrix4x4(1, 0, 0, TRY(get_value(0, width)),
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        if (count == 2)
+            return Gfx::FloatMatrix4x4(1, 0, 0, TRY(get_value(0, width)),
+                0, 1, 0, TRY(get_value(1, height)),
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::Translate3d:
+        return Gfx::FloatMatrix4x4(1, 0, 0, TRY(get_value(0, width)),
+            0, 1, 0, TRY(get_value(1, height)),
+            0, 0, 1, TRY(get_value(2)),
+            0, 0, 0, 1);
+        break;
+    case TransformFunction::TranslateX:
+        if (count == 1)
+            return Gfx::FloatMatrix4x4(1, 0, 0, TRY(get_value(0, width)),
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::TranslateY:
+        if (count == 1)
+            return Gfx::FloatMatrix4x4(1, 0, 0, 0,
+                0, 1, 0, TRY(get_value(0, height)),
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::TranslateZ:
+        if (count == 1)
+            return Gfx::FloatMatrix4x4(1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, TRY(get_value(0)),
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::Scale:
+        if (count == 1)
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), 0, 0, 0,
+                0, TRY(get_value(0)), 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        if (count == 2)
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), 0, 0, 0,
+                0, TRY(get_value(1)), 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::Scale3d:
+        if (count == 3)
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), 0, 0, 0,
+                0, TRY(get_value(1)), 0, 0,
+                0, 0, TRY(get_value(2)), 0,
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::ScaleX:
+        if (count == 1)
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::ScaleY:
+        if (count == 1)
+            return Gfx::FloatMatrix4x4(1, 0, 0, 0,
+                0, TRY(get_value(0)), 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::ScaleZ:
+        if (count == 1)
+            return Gfx::FloatMatrix4x4(1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, TRY(get_value(0)), 0,
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::Rotate3d:
+        if (count == 4)
+            return Gfx::rotation_matrix({ TRY(get_value(0)), TRY(get_value(1)), TRY(get_value(2)) }, TRY(get_value(3)));
+        break;
+    case TransformFunction::RotateX:
+        if (count == 1)
+            return Gfx::rotation_matrix({ 1.0f, 0.0f, 0.0f }, TRY(get_value(0)));
+        break;
+    case TransformFunction::RotateY:
+        if (count == 1)
+            return Gfx::rotation_matrix({ 0.0f, 1.0f, 0.0f }, TRY(get_value(0)));
+        break;
+    case TransformFunction::Rotate:
+    case TransformFunction::RotateZ:
+        if (count == 1)
+            return Gfx::rotation_matrix({ 0.0f, 0.0f, 1.0f }, TRY(get_value(0)));
+        break;
+    case TransformFunction::Skew:
+        if (count == 1)
+            return Gfx::FloatMatrix4x4(1, tanf(TRY(get_value(0))), 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        if (count == 2)
+            return Gfx::FloatMatrix4x4(1, tanf(TRY(get_value(0))), 0, 0,
+                tanf(TRY(get_value(1))), 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::SkewX:
+        if (count == 1)
+            return Gfx::FloatMatrix4x4(1, tanf(TRY(get_value(0))), 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        break;
+    case TransformFunction::SkewY:
+        if (count == 1)
+            return Gfx::FloatMatrix4x4(1, 0, 0, 0,
+                tanf(TRY(get_value(0))), 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1);
+        break;
+    }
+    dbgln_if(LIBWEB_CSS_DEBUG, "FIXME: Unhandled transformation function {} with {} arguments", CSS::to_string(m_properties.transform_function), m_properties.values.size());
+    return Gfx::FloatMatrix4x4::identity();
 }
 
 String TransformationStyleValue::to_string(SerializationMode mode) const
@@ -202,5 +401,4 @@ bool TransformationStyleValue::Properties::operator==(Properties const& other) c
         && transform_function == other.transform_function
         && values.span() == other.values.span();
 }
-
 }

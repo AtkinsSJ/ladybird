@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2022, Andreas Kling <andreas@ladybird.org>
- * Copyright (c) 2022-2023, Sam Atkins <atkinssj@serenityos.org>
+ * Copyright (c) 2022-2024, Sam Atkins <sam@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -10,7 +10,7 @@
 
 namespace Web::CSS {
 
-Transformation::Transformation(TransformFunction function, Vector<TransformValue>&& values)
+Transformation::Transformation(TransformFunction function, Vector<NonnullRefPtr<CSSStyleValue>>&& values)
     : m_function(function)
     , m_values(move(values))
 {
@@ -53,12 +53,12 @@ ErrorOr<Gfx::FloatMatrix4x4> Transformation::to_matrix(Optional<Painting::Painta
     }
 
     switch (m_function) {
-    case CSS::TransformFunction::Perspective:
+    case TransformFunction::Perspective:
         // https://drafts.csswg.org/css-transforms-2/#perspective
         // Count is zero when null parameter
         if (count == 1) {
             // FIXME: Add support for the 'perspective-origin' CSS property.
-            auto distance = TRY(value(0));
+            auto distance = TRY(get_value(0));
             return Gfx::FloatMatrix4x4(1, 0, 0, 0,
                 0, 1, 0, 0,
                 0, 0, 1, 0,
@@ -70,139 +70,139 @@ ErrorOr<Gfx::FloatMatrix4x4> Transformation::to_matrix(Optional<Painting::Painta
                 0, 0, 0, 1);
         }
         break;
-    case CSS::TransformFunction::Matrix:
+    case TransformFunction::Matrix:
         if (count == 6)
-            return Gfx::FloatMatrix4x4(TRY(value(0)), TRY(value(2)), 0, TRY(value(4)),
-                TRY(value(1)), TRY(value(3)), 0, TRY(value(5)),
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), TRY(get_value(2)), 0, TRY(get_value(4)),
+                TRY(get_value(1)), TRY(get_value(3)), 0, TRY(get_value(5)),
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::Matrix3d:
+    case TransformFunction::Matrix3d:
         if (count == 16)
-            return Gfx::FloatMatrix4x4(TRY(value(0)), TRY(value(4)), TRY(value(8)), TRY(value(12)),
-                TRY(value(1)), TRY(value(5)), TRY(value(9)), TRY(value(13)),
-                TRY(value(2)), TRY(value(6)), TRY(value(10)), TRY(value(14)),
-                TRY(value(3)), TRY(value(7)), TRY(value(11)), TRY(value(15)));
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), TRY(get_value(4)), TRY(get_value(8)), TRY(get_value(12)),
+                TRY(get_value(1)), TRY(get_value(5)), TRY(get_value(9)), TRY(get_value(13)),
+                TRY(get_value(2)), TRY(get_value(6)), TRY(get_value(10)), TRY(get_value(14)),
+                TRY(get_value(3)), TRY(get_value(7)), TRY(get_value(11)), TRY(get_value(15)));
         break;
-    case CSS::TransformFunction::Translate:
+    case TransformFunction::Translate:
         if (count == 1)
-            return Gfx::FloatMatrix4x4(1, 0, 0, TRY(value(0, width)),
+            return Gfx::FloatMatrix4x4(1, 0, 0, TRY(get_value(0, width)),
                 0, 1, 0, 0,
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         if (count == 2)
-            return Gfx::FloatMatrix4x4(1, 0, 0, TRY(value(0, width)),
-                0, 1, 0, TRY(value(1, height)),
+            return Gfx::FloatMatrix4x4(1, 0, 0, TRY(get_value(0, width)),
+                0, 1, 0, TRY(get_value(1, height)),
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::Translate3d:
-        return Gfx::FloatMatrix4x4(1, 0, 0, TRY(value(0, width)),
-            0, 1, 0, TRY(value(1, height)),
-            0, 0, 1, TRY(value(2)),
+    case TransformFunction::Translate3d:
+        return Gfx::FloatMatrix4x4(1, 0, 0, TRY(get_value(0, width)),
+            0, 1, 0, TRY(get_value(1, height)),
+            0, 0, 1, TRY(get_value(2)),
             0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::TranslateX:
+    case TransformFunction::TranslateX:
         if (count == 1)
-            return Gfx::FloatMatrix4x4(1, 0, 0, TRY(value(0, width)),
+            return Gfx::FloatMatrix4x4(1, 0, 0, TRY(get_value(0, width)),
                 0, 1, 0, 0,
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::TranslateY:
+    case TransformFunction::TranslateY:
         if (count == 1)
             return Gfx::FloatMatrix4x4(1, 0, 0, 0,
-                0, 1, 0, TRY(value(0, height)),
+                0, 1, 0, TRY(get_value(0, height)),
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::TranslateZ:
+    case TransformFunction::TranslateZ:
         if (count == 1)
             return Gfx::FloatMatrix4x4(1, 0, 0, 0,
                 0, 1, 0, 0,
-                0, 0, 1, TRY(value(0)),
+                0, 0, 1, TRY(get_value(0)),
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::Scale:
+    case TransformFunction::Scale:
         if (count == 1)
-            return Gfx::FloatMatrix4x4(TRY(value(0)), 0, 0, 0,
-                0, TRY(value(0)), 0, 0,
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), 0, 0, 0,
+                0, TRY(get_value(0)), 0, 0,
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         if (count == 2)
-            return Gfx::FloatMatrix4x4(TRY(value(0)), 0, 0, 0,
-                0, TRY(value(1)), 0, 0,
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), 0, 0, 0,
+                0, TRY(get_value(1)), 0, 0,
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::Scale3d:
+    case TransformFunction::Scale3d:
         if (count == 3)
-            return Gfx::FloatMatrix4x4(TRY(value(0)), 0, 0, 0,
-                0, TRY(value(1)), 0, 0,
-                0, 0, TRY(value(2)), 0,
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), 0, 0, 0,
+                0, TRY(get_value(1)), 0, 0,
+                0, 0, TRY(get_value(2)), 0,
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::ScaleX:
+    case TransformFunction::ScaleX:
         if (count == 1)
-            return Gfx::FloatMatrix4x4(TRY(value(0)), 0, 0, 0,
+            return Gfx::FloatMatrix4x4(TRY(get_value(0)), 0, 0, 0,
                 0, 1, 0, 0,
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::ScaleY:
+    case TransformFunction::ScaleY:
         if (count == 1)
             return Gfx::FloatMatrix4x4(1, 0, 0, 0,
-                0, TRY(value(0)), 0, 0,
+                0, TRY(get_value(0)), 0, 0,
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::ScaleZ:
+    case TransformFunction::ScaleZ:
         if (count == 1)
             return Gfx::FloatMatrix4x4(1, 0, 0, 0,
                 0, 1, 0, 0,
-                0, 0, TRY(value(0)), 0,
+                0, 0, TRY(get_value(0)), 0,
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::Rotate3d:
+    case TransformFunction::Rotate3d:
         if (count == 4)
-            return Gfx::rotation_matrix({ TRY(value(0)), TRY(value(1)), TRY(value(2)) }, TRY(value(3)));
+            return Gfx::rotation_matrix({ TRY(get_value(0)), TRY(get_value(1)), TRY(get_value(2)) }, TRY(get_value(3)));
         break;
-    case CSS::TransformFunction::RotateX:
+    case TransformFunction::RotateX:
         if (count == 1)
-            return Gfx::rotation_matrix({ 1.0f, 0.0f, 0.0f }, TRY(value(0)));
+            return Gfx::rotation_matrix({ 1.0f, 0.0f, 0.0f }, TRY(get_value(0)));
         break;
-    case CSS::TransformFunction::RotateY:
+    case TransformFunction::RotateY:
         if (count == 1)
-            return Gfx::rotation_matrix({ 0.0f, 1.0f, 0.0f }, TRY(value(0)));
+            return Gfx::rotation_matrix({ 0.0f, 1.0f, 0.0f }, TRY(get_value(0)));
         break;
-    case CSS::TransformFunction::Rotate:
-    case CSS::TransformFunction::RotateZ:
+    case TransformFunction::Rotate:
+    case TransformFunction::RotateZ:
         if (count == 1)
-            return Gfx::rotation_matrix({ 0.0f, 0.0f, 1.0f }, TRY(value(0)));
+            return Gfx::rotation_matrix({ 0.0f, 0.0f, 1.0f }, TRY(get_value(0)));
         break;
-    case CSS::TransformFunction::Skew:
+    case TransformFunction::Skew:
         if (count == 1)
-            return Gfx::FloatMatrix4x4(1, tanf(TRY(value(0))), 0, 0,
+            return Gfx::FloatMatrix4x4(1, tanf(TRY(get_value(0))), 0, 0,
                 0, 1, 0, 0,
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         if (count == 2)
-            return Gfx::FloatMatrix4x4(1, tanf(TRY(value(0))), 0, 0,
-                tanf(TRY(value(1))), 1, 0, 0,
+            return Gfx::FloatMatrix4x4(1, tanf(TRY(get_value(0))), 0, 0,
+                tanf(TRY(get_value(1))), 1, 0, 0,
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::SkewX:
+    case TransformFunction::SkewX:
         if (count == 1)
-            return Gfx::FloatMatrix4x4(1, tanf(TRY(value(0))), 0, 0,
+            return Gfx::FloatMatrix4x4(1, tanf(TRY(get_value(0))), 0, 0,
                 0, 1, 0, 0,
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         break;
-    case CSS::TransformFunction::SkewY:
+    case TransformFunction::SkewY:
         if (count == 1)
             return Gfx::FloatMatrix4x4(1, 0, 0, 0,
-                tanf(TRY(value(0))), 1, 0, 0,
+                tanf(TRY(get_value(0))), 1, 0, 0,
                 0, 0, 1, 0,
                 0, 0, 0, 1);
         break;

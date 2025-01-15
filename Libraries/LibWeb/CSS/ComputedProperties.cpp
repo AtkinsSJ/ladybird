@@ -533,7 +533,7 @@ Optional<CSS::JustifySelf> ComputedProperties::justify_self() const
     return keyword_to_justify_self(value.to_keyword());
 }
 
-Vector<Transformation> ComputedProperties::transformations_for_style_value(CSSStyleValue const& value)
+Vector<NonnullRefPtr<TransformationStyleValue>> ComputedProperties::transformations_for_style_value(CSSStyleValue const& value)
 {
     if (value.is_keyword() && value.to_keyword() == CSS::Keyword::None)
         return {};
@@ -542,43 +542,41 @@ Vector<Transformation> ComputedProperties::transformations_for_style_value(CSSSt
         return {};
 
     auto& list = value.as_value_list();
-
-    Vector<Transformation> transformations;
-    for (auto& it : list.values()) {
-        if (!it->is_transformation())
-            return {};
-        transformations.append(it->as_transformation().to_transformation());
+    Vector<NonnullRefPtr<TransformationStyleValue>> transformations;
+    for (auto const& value : list.values()) {
+        VERIFY(value->is_transformation());
+        transformations.append(value->as_transformation());
     }
     return transformations;
 }
 
-Vector<CSS::Transformation> ComputedProperties::transformations() const
+Vector<NonnullRefPtr<TransformationStyleValue>> ComputedProperties::transformations() const
 {
-    return transformations_for_style_value(property(CSS::PropertyID::Transform));
+    return transformations_for_style_value(property(PropertyID::Transform));
 }
 
-Optional<Transformation> ComputedProperties::rotate() const
+RefPtr<TransformationStyleValue> ComputedProperties::rotate() const
 {
     auto const& value = property(PropertyID::Rotate);
     if (!value.is_transformation())
         return {};
-    return value.as_transformation().to_transformation();
+    return value.as_transformation();
 }
 
-Optional<Transformation> ComputedProperties::translate() const
+RefPtr<TransformationStyleValue> ComputedProperties::translate() const
 {
     auto const& value = property(PropertyID::Translate);
     if (!value.is_transformation())
         return {};
-    return value.as_transformation().to_transformation();
+    return value.as_transformation();
 }
 
-Optional<Transformation> ComputedProperties::scale() const
+RefPtr<TransformationStyleValue> ComputedProperties::scale() const
 {
     auto const& value = property(PropertyID::Scale);
     if (!value.is_transformation())
         return {};
-    return value.as_transformation().to_transformation();
+    return value.as_transformation();
 }
 
 static Optional<LengthPercentage> length_percentage_for_style_value(CSSStyleValue const& value)

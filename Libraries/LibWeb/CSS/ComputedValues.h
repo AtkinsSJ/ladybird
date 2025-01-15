@@ -27,8 +27,8 @@
 #include <LibWeb/CSS/Size.h>
 #include <LibWeb/CSS/StyleValues/AbstractImageStyleValue.h>
 #include <LibWeb/CSS/StyleValues/BasicShapeStyleValue.h>
-#include <LibWeb/CSS/StyleValues/PositionStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ShadowStyleValue.h>
+#include <LibWeb/CSS/StyleValues/TransformationStyleValue.h>
 #include <LibWeb/CSS/Transformation.h>
 
 namespace Web::CSS {
@@ -484,7 +484,7 @@ public:
     LengthPercentage const& x() const { return m_noninherited.x; }
     LengthPercentage const& y() const { return m_noninherited.y; }
 
-    Vector<CSS::Transformation> const& transformations() const { return m_noninherited.transformations; }
+    Vector<NonnullRefPtr<TransformationStyleValue>> const& transformations() const { return m_noninherited.transformations; }
     CSS::TransformBox const& transform_box() const { return m_noninherited.transform_box; }
     CSS::TransformOrigin const& transform_origin() const { return m_noninherited.transform_origin; }
     Optional<CSS::Transformation> const& rotate() const { return m_noninherited.rotate; }
@@ -647,7 +647,7 @@ protected:
         CSS::Overflow overflow_y { InitialValues::overflow() };
         float opacity { InitialValues::opacity() };
         Vector<ShadowData> box_shadow {};
-        Vector<CSS::Transformation> transformations {};
+        Vector<NonnullRefPtr<TransformationStyleValue>> transformations {};
         CSS::TransformBox transform_box { InitialValues::transform_box() };
         CSS::TransformOrigin transform_origin {};
         CSS::BoxSizing box_sizing { InitialValues::box_sizing() };
@@ -822,7 +822,7 @@ public:
     void set_box_shadow(Vector<ShadowData>&& value) { m_noninherited.box_shadow = move(value); }
     void set_rotate(CSS::Transformation value) { m_noninherited.rotate = move(value); }
     void set_scale(CSS::Transformation value) { m_noninherited.scale = move(value); }
-    void set_transformations(Vector<CSS::Transformation> value) { m_noninherited.transformations = move(value); }
+    void set_transformations(Vector<NonnullRefPtr<TransformationStyleValue>> value) { m_noninherited.transformations = move(value); }
     void set_transform_box(CSS::TransformBox value) { m_noninherited.transform_box = value; }
     void set_transform_origin(CSS::TransformOrigin value) { m_noninherited.transform_origin = value; }
     void set_translate(CSS::Transformation value) { m_noninherited.translate = move(value); }
