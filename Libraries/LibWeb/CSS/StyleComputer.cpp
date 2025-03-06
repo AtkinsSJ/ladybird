@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018-2023, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021, the SerenityOS developers.
- * Copyright (c) 2021-2024, Sam Atkins <sam@ladybird.org>
+ * Copyright (c) 2021-2025, Sam Atkins <sam@ladybird.org>
  * Copyright (c) 2024, Matthew Olsson <mattco@serenityos.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
@@ -59,6 +59,7 @@
 #include <LibWeb/CSS/StyleValues/LengthStyleValue.h>
 #include <LibWeb/CSS/StyleValues/MathDepthStyleValue.h>
 #include <LibWeb/CSS/StyleValues/NumberStyleValue.h>
+#include <LibWeb/CSS/StyleValues/PendingSubstitutionStyleValue.h>
 #include <LibWeb/CSS/StyleValues/PercentageStyleValue.h>
 #include <LibWeb/CSS/StyleValues/PositionStyleValue.h>
 #include <LibWeb/CSS/StyleValues/RatioStyleValue.h>
@@ -679,6 +680,19 @@ void StyleComputer::for_each_property_expanding_shorthands(PropertyID property_i
         auto& values = shorthand_value.values();
         for (size_t i = 0; i < properties.size(); ++i)
             for_each_property_expanding_shorthands(properties[i], values[i], allow_unresolved, set_longhand_property);
+        return;
+    }
+
+    if (value.is_unresolved() && property_is_shorthand(property_id)) {
+        // If a shorthand property contains an arbitrary substitution function in its value, the longhand properties
+        // it’s associated with must instead be filled in with a special, unobservable-to-authors pending-substitution
+        // value that indicates the shorthand contains an arbitrary substitution function, and thus the longhand’s
+        // value can’t be determined until after substituted.
+        // https://drafts.csswg.org/css-values-5/#pending-substitution-value
+        auto pending_substitution_value = PendingSubstitutionStyleValue::create();
+        for (auto longhand_id : longhands_for_shorthand(property_id)) {
+            for_each_property_expanding_shorthands(longhand_id, pending_substitution_value, allow_unresolved, set_longhand_property);
+        }
         return;
     }
 
