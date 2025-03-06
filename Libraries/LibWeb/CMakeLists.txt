@@ -101,6 +101,7 @@ set(SOURCES
     CSS/MediaQueryList.cpp
     CSS/MediaQueryListEvent.cpp
     CSS/Number.cpp
+    CSS/Parser/ArbitrarySubstitutionFunctions.cpp
     CSS/Parser/ComponentValue.cpp
     CSS/Parser/GradientParsing.cpp
     CSS/Parser/Helpers.cpp
