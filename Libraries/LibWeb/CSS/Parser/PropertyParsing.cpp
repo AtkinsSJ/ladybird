@@ -410,7 +410,7 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
     auto context_guard = push_temporary_value_parsing_context(property_id);
 
     Vector<ComponentValue> component_values;
-    bool contains_var_or_attr = false;
+    bool contains_arbitrary_substitution_function = false;
     bool const property_accepts_custom_ident = property_accepts_type(property_id, ValueType::CustomIdent);
 
     while (unprocessed_tokens.has_next_token()) {
@@ -429,18 +429,18 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
                 return ParseError::IncludesIgnoredVendorPrefix;
         }
 
-        if (!contains_var_or_attr) {
+        if (!contains_arbitrary_substitution_function) {
             if (token.is_function() && function_contains_var_or_attr(token.function()))
-                contains_var_or_attr = true;
+                contains_arbitrary_substitution_function = true;
             else if (token.is_block() && block_contains_var_or_attr(token.block()))
-                contains_var_or_attr = true;
+                contains_arbitrary_substitution_function = true;
         }
 
         component_values.append(token);
     }
 
-    if (property_id == PropertyID::Custom || contains_var_or_attr)
-        return UnresolvedStyleValue::create(move(component_values), contains_var_or_attr, original_source_text);
+    if (property_id == PropertyID::Custom || contains_arbitrary_substitution_function)
+        return UnresolvedStyleValue::create(move(component_values), contains_arbitrary_substitution_function, original_source_text);
 
     if (component_values.is_empty())
         return ParseError::SyntaxError;

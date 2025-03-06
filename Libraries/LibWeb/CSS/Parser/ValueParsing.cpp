@@ -3555,7 +3555,7 @@ NonnullRefPtr<CSSStyleValue> Parser::resolve_unresolved_style_value(ParsingParam
 {
     // Unresolved always contains a var() or attr(), unless it is a custom property's value, in which case we shouldn't be trying
     // to produce a different CSSStyleValue from it.
-    VERIFY(unresolved.contains_var_or_attr());
+    VERIFY(unresolved.contains_arbitrary_substitution_function());
 
     // If the value is invalid, we fall back to `unset`: https://www.w3.org/TR/css-variables-1/#invalid-at-computed-value-time
 
