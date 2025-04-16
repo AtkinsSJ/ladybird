@@ -40,6 +40,11 @@ struct Agent {
     // A similar-origin window agent's current element queue is the element queue at the top of its custom element reactions stack.
     Vector<GC::Root<DOM::Element>>& current_element_queue() { return custom_element_reactions_stack.element_queue_stack.last(); }
     Vector<GC::Root<DOM::Element>> const& current_element_queue() const { return custom_element_reactions_stack.element_queue_stack.last(); }
+
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#active-custom-element-constructor-map
+    // Each similar-origin window agent has an associated active custom element constructor map, which is a map of
+    // constructors to CustomElementRegistry objects.
+    HashMap<JS::Object*, GC::Root<CustomElementRegistry>> custom_element_constructor_map;
 };
 
 Agent& relevant_agent(JS::Object const&);

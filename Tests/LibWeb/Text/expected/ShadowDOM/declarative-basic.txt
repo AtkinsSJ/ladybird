@@ -11,15 +11,15 @@ null
 
 
 
-<template shadowrootmode="open">open</template>
+<template shadowrootmode="open" shadowrootcustomelementregistry="">open</template>
 
 
-<template shadowrootmode="open" shadowrootserializable="">open</template>
+<template shadowrootmode="open" shadowrootserializable="" shadowrootcustomelementregistry="">open</template>
 
 
 
 
 
-<template shadowrootmode="open" shadowrootserializable="">open</template>
+<template shadowrootmode="open" shadowrootserializable="" shadowrootcustomelementregistry="">open</template>
 
 

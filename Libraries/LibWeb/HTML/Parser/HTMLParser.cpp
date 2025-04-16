@@ -26,6 +26,7 @@
 #include <LibWeb/DOM/ShadowRoot.h>
 #include <LibWeb/DOM/Text.h>
 #include <LibWeb/HTML/CustomElements/CustomElementDefinition.h>
+#include <LibWeb/HTML/CustomElements/CustomElementRegistry.h>
 #include <LibWeb/HTML/EventLoop/EventLoop.h>
 #include <LibWeb/HTML/EventNames.h>
 #include <LibWeb/HTML/HTMLFormElement.h>
@@ -766,13 +767,16 @@ GC::Ref<DOM::Element> HTMLParser::create_element_for(HTMLToken const& token, Opt
     // 5. Let is be the value of the "is" attribute in the given token, if such an attribute exists, or null otherwise.
     auto is_value = token.attribute(AttributeNames::is);
 
-    // 6. Let definition be the result of looking up a custom element definition given document, given namespace, local name, and is.
-    auto definition = document->lookup_custom_element_definition(namespace_, local_name, is_value);
+    // 6. Let registry be the result of looking up a custom element registry given intended parent.
+    auto registry = look_up_a_custom_element_registry(intended_parent);
 
-    // 7. Let willExecuteScript be true if definition is non-null and the parser was not created as part of the HTML fragment parsing algorithm; otherwise false.
+    // 7. Let definition be the result of looking up a custom element definition given registry, given namespace, local name, and is.
+    auto definition = look_up_a_custom_element_definition(registry, namespace_, local_name, is_value);
+
+    // 8. Let willExecuteScript be true if definition is non-null and the parser was not created as part of the HTML fragment parsing algorithm; otherwise false.
     bool will_execute_script = definition && !m_parsing_fragment;
 
-    // 8. If willExecuteScript is true:
+    // 9. If willExecuteScript is true:
     if (will_execute_script) {
         // 1. Increment document's throw-on-dynamic-markup-insertion counter.
         document->increment_throw_on_dynamic_markup_insertion_counter({});
@@ -786,8 +790,8 @@ GC::Ref<DOM::Element> HTMLParser::create_element_for(HTMLToken const& token, Opt
         relevant_agent(document).custom_element_reactions_stack.element_queue_stack.append({});
     }
 
-    // 9. Let element be the result of creating an element given document, localName, given namespace, null, is, and willExecuteScript.
-    auto element = create_element(*document, local_name, namespace_, {}, is_value, will_execute_script).release_value_but_fixme_should_propagate_errors();
+    // 10. Let element be the result of creating an element given document, localName, given namespace, null, is, willExecuteScript, and registry.
+    auto element = create_element(*document, local_name, namespace_, {}, is_value, will_execute_script, registry).release_value_but_fixme_should_propagate_errors();
 
     // AD-HOC: Let <link> elements know which document they were originally parsed for.
     //         This is used for the render-blocking logic.
@@ -795,7 +799,7 @@ GC::Ref<DOM::Element> HTMLParser::create_element_for(HTMLToken const& token, Opt
         as<HTMLLinkElement>(*element).set_parser_document({}, document);
     }
 
-    // 10. Append each attribute in the given token to element.
+    // 11. Append each attribute in the given token to element.
     token.for_each_attribute([&](auto const& attribute) {
         DOM::QualifiedName qualified_name { attribute.local_name, attribute.prefix, attribute.namespace_ };
         auto dom_attribute = realm().create<DOM::Attr>(*document, move(qualified_name), attribute.value, element);
@@ -803,7 +807,7 @@ GC::Ref<DOM::Element> HTMLParser::create_element_for(HTMLToken const& token, Opt
         return IterationDecision::Continue;
     });
 
-    // 11. If willExecuteScript is true:
+    // 12. If willExecuteScript is true:
     if (will_execute_script) {
         // 1. Let queue be the result of popping from document's relevant agent's custom element reactions stack. (This will be the same element queue as was pushed above.)
         auto queue = relevant_agent(document).custom_element_reactions_stack.element_queue_stack.take_last();
@@ -815,12 +819,12 @@ GC::Ref<DOM::Element> HTMLParser::create_element_for(HTMLToken const& token, Opt
         document->decrement_throw_on_dynamic_markup_insertion_counter({});
     }
 
-    // FIXME: 12. If element has an xmlns attribute in the XMLNS namespace whose value is not exactly the same as the element's namespace, that is a parse error.
+    // FIXME: 13. If element has an xmlns attribute in the XMLNS namespace whose value is not exactly the same as the element's namespace, that is a parse error.
     //            Similarly, if element has an xmlns:xlink attribute in the XMLNS namespace whose value is not the XLink Namespace, that is a parse error.
 
-    // FIXME: 13. If element is a resettable element and not a form-associated custom element, then invoke its reset algorithm. (This initializes the element's value and checkedness based on the element's attributes.)
+    // FIXME: 14. If element is a resettable element and not a form-associated custom element, then invoke its reset algorithm. (This initializes the element's value and checkedness based on the element's attributes.)
 
-    // 14. If element is a form-associated element and not a form-associated custom element, the form element pointer is not null, there is no template element on the stack of open elements,
+    // 15. If element is a form-associated element and not a form-associated custom element, the form element pointer is not null, there is no template element on the stack of open elements,
     //     element is either not listed or doesn't have a form attribute, and the intended parent is in the same tree as the element pointed to by the form element pointer,
     //     then associate element with the form element pointed to by the form element pointer and set element's parser inserted flag.
     // FIXME: Check if the element is not a form-associated custom element.
@@ -836,7 +840,7 @@ GC::Ref<DOM::Element> HTMLParser::create_element_for(HTMLToken const& token, Opt
         }
     }
 
-    // 15. Return element.
+    // 16. Return element.
     return element;
 }
 
@@ -1089,9 +1093,11 @@ void HTMLParser::handle_in_head(HTMLToken& token)
 
             // 8. Otherwise:
             else {
-                // 1. Attach a shadow root with declarative shadow host element, mode, clonable, serializable, delegatesFocus, and "named".
+                // 1. Attach a shadow root with declarative shadow host element, mode, clonable, serializable, delegatesFocus, "named", and registry.
+                // FIXME: What is "registry"?
+                GC::Ptr<CustomElementRegistry> registry;
                 //    If an exception is thrown, then catch it, report the exception, insert an element at the adjusted insertion location with template, and return.
-                auto result = declarative_shadow_host_element.attach_a_shadow_root(mode, clonable, serializable, delegates_focus, Bindings::SlotAssignmentMode::Named);
+                auto result = declarative_shadow_host_element.attach_a_shadow_root(mode, clonable, serializable, delegates_focus, Bindings::SlotAssignmentMode::Named, registry);
                 if (result.is_error()) {
                     report_exception(Bindings::exception_to_throw_completion(vm(), result.release_error()), realm());
                     insert_an_element_at_the_adjusted_insertion_location(template_);
@@ -1109,6 +1115,10 @@ void HTMLParser::handle_in_head(HTMLToken& token)
 
                 // 5. Set shadow's available to element internals to true.
                 shadow.set_available_to_element_internals(true);
+
+                // 6. If template start tag has a shadowrootcustomelementregistry attribute, then set shadow's keep custom element registry null to true.
+                if (token.has_attribute(AttributeNames::shadowrootcustomelementregistry))
+                    shadow.set_keep_custom_element_registry_null(true);
             }
         }
 
@@ -4601,8 +4611,8 @@ Vector<GC::Root<DOM::Node>> HTMLParser::parse_html_fragment(DOM::Element& contex
         // Leave the tokenizer in the data state.
     }
 
-    // 7. Let root be the result of creating an element given document, "html", and the HTML namespace.
-    auto root = MUST(create_element(context_element.document(), HTML::TagNames::html, Namespace::HTML));
+    // 7. Let root be the result of creating an element given document, "html", the HTML namespace, null, null, false, and context's custom element registry.
+    auto root = MUST(create_element(context_element.document(), HTML::TagNames::html, Namespace::HTML, {}, {}, false, context_element.custom_element_registry()));
 
     // 8. Append root to document.
     MUST(temp_document->append_child(root));
@@ -4831,14 +4841,18 @@ String HTMLParser::serialize_html_fragment(DOM::Node const& node, SerializableSh
                 if (shadow->clonable())
                     builder.append(" shadowrootclonable=\"\""sv);
 
-                // 7. Append ">".
+                // 7. If current node's custom element registry is not shadow's custom element registry, then append " shadowrootcustomelementregistry=""".
+                if (element.custom_element_registry() != shadow->custom_element_registry())
+                    builder.append(" shadowrootcustomelementregistry=\"\""sv);
+
+                // 8. Append ">".
                 builder.append('>');
 
-                // 8. Append the value of running the HTML fragment serialization algorithm with shadow,
+                // 9. Append the value of running the HTML fragment serialization algorithm with shadow,
                 //    serializableShadowRoots, and shadowRoots (thus recursing into this algorithm for that element).
                 builder.append(serialize_html_fragment(*shadow, serializable_shadow_roots, shadow_roots));
 
-                // 9. Append "</template>".
+                // 10. Append "</template>".
                 builder.append("</template>"sv);
             }
         }

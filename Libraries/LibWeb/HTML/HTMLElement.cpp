@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include "CustomElements/CustomElementRegistry.h"
+
 #include <AK/StringBuilder.h>
 #include <LibJS/Runtime/NativeFunction.h>
 #include <LibWeb/ARIA/Roles.h>
@@ -1018,14 +1020,15 @@ TokenizedFeature::NoOpener HTMLElement::get_an_elements_noopener(URL::URL const&
     return TokenizedFeature::NoOpener::No;
 }
 
+// https://html.spec.whatwg.org/multipage/custom-elements.html#dom-attachinternals
 WebIDL::ExceptionOr<GC::Ref<ElementInternals>> HTMLElement::attach_internals()
 {
     // 1. If this's is value is not null, then throw a "NotSupportedError" DOMException.
     if (is_value().has_value())
         return WebIDL::NotSupportedError::create(realm(), "ElementInternals cannot be attached to a customized build-in element"_string);
 
-    // 2. Let definition be the result of looking up a custom element definition given this's node document, its namespace, its local name, and null as the is value.
-    auto definition = document().lookup_custom_element_definition(namespace_uri(), local_name(), is_value());
+    // 2. Let definition be the result of looking up a custom element definition given this's custom element registry, this's namespace, this's local name, and null.
+    auto definition = look_up_a_custom_element_definition(custom_element_registry(), namespace_uri(), local_name(), {});
 
     // 3. If definition is null, then throw an "NotSupportedError" DOMException.
     if (!definition)

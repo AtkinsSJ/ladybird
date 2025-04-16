@@ -1722,12 +1722,9 @@ GC::Ref<Navigation> Window::navigation()
 // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-window-customelements
 GC::Ref<CustomElementRegistry> Window::custom_elements()
 {
-    auto& realm = this->realm();
-
-    // The customElements attribute of the Window interface must return the CustomElementRegistry object for that Window object.
-    if (!m_custom_element_registry)
-        m_custom_element_registry = realm.create<CustomElementRegistry>(realm);
-    return GC::Ref { *m_custom_element_registry };
+    // The Window customElements getter steps are to return this's associated Document's custom element registry.
+    // FIXME: Can this actually be null? Spec issue: https://github.com/whatwg/html/issues/11220
+    return *associated_document().custom_element_registry();
 }
 
 // https://html.spec.whatwg.org/multipage/nav-history-apis.html#document-tree-child-navigable-target-name-property-set
