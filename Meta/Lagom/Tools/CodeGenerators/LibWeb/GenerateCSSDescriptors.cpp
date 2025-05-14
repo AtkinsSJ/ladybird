@@ -74,6 +74,7 @@ ErrorOr<void> generate_header_file(JsonObject const& at_rules_data, Core::File& 
     quick_sort(all_descriptors);
 
     generator.set("at_rule_id_underlying_type", underlying_type_for_enum(at_rule_count));
+    generator.set("descriptor_id_count", String::number(all_descriptors.size()));
     generator.set("descriptor_id_underlying_type", underlying_type_for_enum(all_descriptors.size()));
 
     generator.append(R"~~~(
@@ -108,6 +109,8 @@ enum class DescriptorID : @descriptor_id_underlying_type@ {
     }
     generator.append(R"~~~(
 };
+
+constexpr u32 descriptor_count = @descriptor_id_count@;
 
 Optional<DescriptorID> descriptor_id_from_string(AtRuleID, StringView);
 FlyString to_string(DescriptorID);

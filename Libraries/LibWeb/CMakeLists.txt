@@ -142,6 +142,7 @@ set(SOURCES
     CSS/Selector.cpp
     CSS/SelectorEngine.cpp
     CSS/Serialize.cpp
+    CSS/Shorthands.cpp
     CSS/Size.cpp
     CSS/Sizing.cpp
     CSS/StyleComputer.cpp

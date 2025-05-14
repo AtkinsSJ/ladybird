@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/Bitmap.h>
 #include <LibWeb/CSS/CSSDescriptors.h>
 #include <LibWeb/CSS/Parser/Parser.h>
 #include <LibWeb/CSS/Serialize.h>
@@ -200,7 +201,7 @@ String CSSDescriptors::serialized() const
     list.ensure_capacity(m_descriptors.size());
 
     // 2. Let already serialized be an empty array.
-    // AD-HOC: Not needed as we don't have shorthands.
+    auto already_serialized = MUST(Bitmap::create(descriptor_count, false));
 
     // 3. Declaration loop: For each CSS declaration declaration in declaration block’s declarations, follow these substeps:
     for (auto const& descriptor : m_descriptors) {
@@ -208,11 +209,82 @@ String CSSDescriptors::serialized() const
         auto property = to_string(descriptor.descriptor_id);
 
         // 2. If property is in already serialized, continue with the steps labeled declaration loop.
-        // AD-HOC: Not needed as we don't have shorthands.
+        if (already_serialized.get(to_underlying(descriptor.descriptor_id)))
+            continue;
 
         // 3. If property maps to one or more shorthand properties, let shorthands be an array of those shorthand properties, in preferred order.
-        // 4. Shorthand loop: For each shorthand in shorthands, follow these substeps: ...
-        // NB: Descriptors can't be shorthands.
+        auto shorthands = shorthands_for_descriptor(m_at_rule_id, descriptor.descriptor_id);
+        // 4. Shorthand loop: For each shorthand in shorthands, follow these substeps:
+        bool continue_with_declaration_loop = false;
+        for (auto shorthand : shorthands) {
+            // 1. Let longhands be an array consisting of all CSS declarations in declaration block’s declarations that
+            //    are not in already serialized and have a property name that maps to one of the shorthand properties
+            //    in shorthands.
+            // AD-HOC: The extra `longhands` array seems redundant, as we then trim it down for `current_longhands`
+            //         and never refer to `longhands` again. So, instead, just gather the declarations for `shorthand`
+            //         here. See discussion in https://github.com/w3c/csswg-drafts/pull/12187
+            Vector<Descriptor> longhands;
+            for (auto const& declaration : m_descriptors) {
+                if (already_serialized.get(to_underlying(declaration.descriptor_id)))
+                    continue;
+                if (!shorthands_for_descriptor(m_at_rule_id, declaration.descriptor_id).contains_slow(shorthand))
+                    continue;
+                longhands.append(declaration);
+            }
+
+            // 2. If not all properties that map to shorthand are present in longhands, continue with the steps labeled
+            //    shorthand loop.
+            bool all_present = true;
+            for_each_expanded_longhand(m_at_rule_id, shorthand, nullptr, [&all_present, &longhands](auto longhand, auto const&) {
+                if (!longhands.find_first_index_if([longhand](auto& it) { return it.descriptor_id == longhand; }).has_value()) {
+                    all_present = false;
+                }
+            });
+            if (!all_present)
+                continue;
+
+            // 3. Let current longhands be an empty array.
+            // 4. Append all CSS declarations in longhands that have a property name that maps to shorthand to current longhands.
+            // AD-HOC: See note in substep 1.
+            auto& current_longhands = longhands;
+
+            // 5. If there are one or more CSS declarations in current longhands have their important flag set and one
+            //    or more with it unset, continue with the steps labeled shorthand loop.
+            // NB: Descriptors can't be important.
+
+            // 6. If there is any declaration in declaration block in between the first and the last longhand in
+            //    current longhands which belongs to the same logical property group, but has a different mapping logic
+            //    as any of the longhands in current longhands, and is not in current longhands, continue with the
+            //    steps labeled shorthand loop.
+            // FIXME: Figure this out once we support logical property groups.
+
+            // 7. Let value be the result of invoking serialize a CSS value with current longhands.
+            // FIXME: We do not have a general-purpose way of creating a shorthand style value from a set of longhands.
+            String value;
+
+            // 8. If value is the empty string, continue with the steps labeled shorthand loop.
+            if (value.is_empty())
+                continue;
+
+            // 9. Let serialized declaration be the result of invoking serialize a CSS declaration with property name
+            //    shorthand, value value, and the important flag set if the CSS declarations in current longhands have
+            //    their important flag set.
+            auto serialized_declaration = serialize_a_css_declaration(to_string(shorthand), value, Important::No);
+
+            // 10. Append serialized declaration to list.
+            list.append(move(serialized_declaration));
+
+            // 11. Append the property names of all items of current longhands to already serialized.
+            for (auto const& current_longhand : current_longhands)
+                already_serialized.set(to_underlying(current_longhand.descriptor_id), true);
+
+            // 12. Continue with the steps labeled declaration loop.
+            continue_with_declaration_loop = true;
+            break;
+        }
+
+        if (continue_with_declaration_loop)
+            continue;
 
         // 5. Let value be the result of invoking serialize a CSS value of declaration.
         auto value = descriptor.value->to_string(SerializationMode::Normal);
@@ -224,7 +296,7 @@ String CSSDescriptors::serialized() const
         list.append(serialized_declaration);
 
         // 8. Append property to already serialized.
-        // AD-HOC: Not needed as we don't have shorthands.
+        already_serialized.set(to_underlying(descriptor.descriptor_id), true);
     }
 
     // 4. Return list joined with " " (U+0020).
@@ -277,58 +349,6 @@ RefPtr<CSSStyleValue const> CSSDescriptors::descriptor_or_initial_value(Descript
         return value.release_nonnull();
 
     return descriptor_initial_value(m_at_rule_id, descriptor_id);
-}
-
-bool is_shorthand(AtRuleID at_rule, DescriptorID descriptor)
-{
-    if (at_rule == AtRuleID::Page && descriptor == DescriptorID::Margin)
-        return true;
-
-    return false;
-}
-
-void for_each_expanded_longhand(AtRuleID at_rule, DescriptorID descriptor, RefPtr<CSSStyleValue const> value, Function<void(DescriptorID, RefPtr<CSSStyleValue const>)> callback)
-{
-    if (at_rule == AtRuleID::Page && descriptor == DescriptorID::Margin) {
-        if (!value) {
-            callback(DescriptorID::MarginTop, nullptr);
-            callback(DescriptorID::MarginRight, nullptr);
-            callback(DescriptorID::MarginBottom, nullptr);
-            callback(DescriptorID::MarginLeft, nullptr);
-            return;
-        }
-
-        if (value->is_value_list()) {
-            auto& values = value->as_value_list().values();
-            if (values.size() == 4) {
-                callback(DescriptorID::MarginTop, values[0]);
-                callback(DescriptorID::MarginRight, values[1]);
-                callback(DescriptorID::MarginBottom, values[2]);
-                callback(DescriptorID::MarginLeft, values[3]);
-            } else if (values.size() == 3) {
-                callback(DescriptorID::MarginTop, values[0]);
-                callback(DescriptorID::MarginRight, values[1]);
-                callback(DescriptorID::MarginBottom, values[2]);
-                callback(DescriptorID::MarginLeft, values[1]);
-            } else if (values.size() == 2) {
-                callback(DescriptorID::MarginTop, values[0]);
-                callback(DescriptorID::MarginRight, values[1]);
-                callback(DescriptorID::MarginBottom, values[0]);
-                callback(DescriptorID::MarginLeft, values[1]);
-            } else if (values.size() == 1) {
-                callback(DescriptorID::MarginTop, values[0]);
-                callback(DescriptorID::MarginRight, values[0]);
-                callback(DescriptorID::MarginBottom, values[0]);
-                callback(DescriptorID::MarginLeft, values[0]);
-            }
-
-        } else {
-            callback(DescriptorID::MarginTop, *value);
-            callback(DescriptorID::MarginRight, *value);
-            callback(DescriptorID::MarginBottom, *value);
-            callback(DescriptorID::MarginLeft, *value);
-        }
-    }
 }
 
 }
