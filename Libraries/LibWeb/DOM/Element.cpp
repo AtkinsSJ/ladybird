@@ -3752,6 +3752,13 @@ void Element::resolve_counters(CSS::ComputedProperties& style)
 
     // 5. Counter values are used (counter()/counters()).
     // NOTE: This happens when we process the `content` property.
+
+    // AD-HOC: Resolve our pseudo-elements' counters too.
+    if (m_pseudo_element_data) {
+        for (auto pseudo_element : *m_pseudo_element_data) {
+            pseudo_element.value->resolve_counters();
+        }
+    }
 }
 
 // https://drafts.csswg.org/css-lists-3/#inherit-counters

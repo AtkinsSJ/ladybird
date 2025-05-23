@@ -37,6 +37,7 @@ private:
     GC::Ptr<CSS::CascadedProperties> m_cascaded_properties;
     GC::Ptr<CSS::ComputedProperties> m_computed_properties;
     HashMap<FlyString, CSS::StyleProperty> m_custom_properties;
+    OwnPtr<CSS::CountersSet> m_counters_set;
 };
 
 // https://drafts.csswg.org/css-view-transitions/#pseudo-element-tree
