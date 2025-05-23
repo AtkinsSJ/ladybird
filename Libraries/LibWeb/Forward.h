@@ -372,6 +372,7 @@ class NodeList;
 class ParentNode;
 class Position;
 class ProcessingInstruction;
+class PseudoElement;
 class Range;
 class RegisteredObserver;
 class ShadowRoot;
