@@ -357,6 +357,7 @@ class DOMTokenList;
 class EditingHostManager;
 class Element;
 class ElementByIdMap;
+class ElementReference;
 class Event;
 class EventHandler;
 class EventTarget;

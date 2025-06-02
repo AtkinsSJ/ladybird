@@ -232,6 +232,7 @@ set(SOURCES
     DOM/Element.cpp
     DOM/ElementByIdMap.cpp
     DOM/ElementFactory.cpp
+    DOM/ElementReference.cpp
     DOM/Event.cpp
     DOM/EventDispatcher.cpp
     DOM/EventTarget.cpp
