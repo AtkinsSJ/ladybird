@@ -17,6 +17,9 @@ CSSDescriptors::CSSDescriptors(JS::Realm& realm, AtRuleID at_rule_id, Vector<Des
     , m_at_rule_id(at_rule_id)
     , m_descriptors(move(descriptors))
 {
+    for (auto const& descriptor : m_descriptors) {
+        const_cast<CSSStyleValue&>(*descriptor.value).set_source_declaration(this);
+    }
 }
 
 CSSDescriptors::~CSSDescriptors() = default;
@@ -42,6 +45,8 @@ String CSSDescriptors::item(size_t index) const
 bool CSSDescriptors::set_a_css_declaration(DescriptorID descriptor_id, NonnullRefPtr<CSSStyleValue const> value, Important)
 {
     VERIFY(!is_computed());
+
+    const_cast<CSSStyleValue&>(*value).set_source_declaration(this);
 
     for (auto& descriptor : m_descriptors) {
         if (descriptor.descriptor_id == descriptor_id) {
@@ -246,6 +251,9 @@ WebIDL::ExceptionOr<void> CSSDescriptors::set_css_text(StringView value)
     auto descriptors = parse_css_descriptor_declaration_block(Parser::ParsingParams {}, m_at_rule_id, value);
     if (!descriptors.is_empty())
         m_descriptors = move(descriptors);
+    for (auto const& descriptor : m_descriptors) {
+        const_cast<CSSStyleValue&>(*descriptor.value).set_source_declaration(this);
+    }
 
     // 4. Update style attribute for the CSS declaration block.
     update_style_attribute();

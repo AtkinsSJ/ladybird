@@ -104,20 +104,13 @@ void CSSImportRule::fetch()
         return;
     }
 
-    // 3. Let parsedUrl be the result of the URL parser steps with rule’s URL and parentStylesheet’s location.
-    //    If the algorithm returns an error, return. [CSSOM]
-    auto parsed_url = DOMURL::parse(href(), parent_style_sheet.location());
-    if (!parsed_url.has_value()) {
-        dbgln("Unable to parse @import url `{}` parent location `{}` as a URL.", href(), parent_style_sheet.location());
-        return;
-    }
-
     // FIXME: Figure out the "correct" way to delay the load event.
     m_document_load_event_delayer.emplace(*m_document);
 
-    // 4. Fetch a style resource from parsedUrl, with stylesheet parentStylesheet, destination "style", CORS mode "no-cors", and processResponse being the following steps given response response and byte stream, null or failure byteStream:
-    (void)fetch_a_style_resource(parsed_url.value(), { parent_style_sheet }, Fetch::Infrastructure::Request::Destination::Style, CorsMode::NoCors,
-        [strong_this = GC::Ref { *this }, parent_style_sheet = GC::Ref { parent_style_sheet }, parsed_url = parsed_url.value()](auto response, auto maybe_byte_stream) {
+    // 4. Fetch a style resource from rule’s URL, with ruleOrDeclaration rule, destination "style", CORS mode "no-cors",
+    //    and processResponse being the following steps given response response and byte stream, null or failure byteStream:
+    (void)fetch_a_style_resource(m_url, { *this }, Fetch::Infrastructure::Request::Destination::Style, CorsMode::NoCors,
+        [strong_this = GC::Ref { *this }, parent_style_sheet = GC::Ref { parent_style_sheet }](auto response, auto maybe_byte_stream) {
             // AD-HOC: Stop delaying the load event.
             ScopeGuard guard = [strong_this] {
                 strong_this->m_document_load_event_delayer.clear();
@@ -139,6 +132,8 @@ void CSSImportRule::fetch()
             }
 
             // 4. Let importedStylesheet be the result of parsing byteStream given parsedUrl.
+            // FIXME: What should parsedUrl be?
+            auto const& parsed_url = response->url().value();
             // FIXME: Tidy up our parsing API. For now, do the decoding here.
             // FIXME: Get the encoding from the response somehow.
             auto encoding = "utf-8"sv;

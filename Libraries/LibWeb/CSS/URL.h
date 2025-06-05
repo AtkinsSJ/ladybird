@@ -57,6 +57,13 @@ private:
     Vector<RequestURLModifier> m_request_url_modifiers;
 };
 
+using StyleResourceURL = Variant<::URL::URL, CSS::URL>;
+
+using CSSRuleOrDeclaration = Variant<GC::Ref<CSSRule>, GC::Ref<CSSStyleDeclaration>>;
+
+::URL::URL compute_style_resource_base_url(CSSRuleOrDeclaration);
+Optional<::URL::URL> resolve_style_resource_url(StyleResourceURL, CSSRuleOrDeclaration);
+
 }
 
 template<>
