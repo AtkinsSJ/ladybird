@@ -223,9 +223,9 @@ void FontLoader::start_loading_next_url()
         return;
 
     // https://drafts.csswg.org/css-fonts-4/#fetch-a-font
-    // To fetch a font given a selected <url> url for @font-face rule, fetch url, with stylesheet being rule’s parent
-    // CSS style sheet, destination "font", CORS mode "cors", and processResponse being the following steps given
-    // response res and null, failure or a byte stream stream:
+    // To fetch a font given a selected <url> url for @font-face rule, fetch url, with ruleOrDeclaration being rule,
+    // destination "font", CORS mode "cors", and processResponse being the following steps given response res and null,
+    // failure or a byte stream stream:
     auto style_sheet_or_document = m_parent_style_sheet ? StyleSheetOrDocument { *m_parent_style_sheet } : StyleSheetOrDocument { m_style_computer.document() };
     auto maybe_fetch_controller = fetch_a_style_resource(m_urls.take_first(), style_sheet_or_document, Fetch::Infrastructure::Request::Destination::Font, CorsMode::Cors,
         [weak_loader = make_weak_ptr()](auto response, auto stream) {

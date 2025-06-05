@@ -45,7 +45,7 @@ void ImageStyleValue::visit_edges(JS::Cell::Visitor& visitor) const
     // FIXME: visit_edges in non-GC allocated classes is confusing pattern.
     //        Consider making CSSStyleValue to be GC allocated instead.
     visitor.visit(m_resource_request);
-    visitor.visit(m_style_sheet);
+    visitor.visit(m_source_declaration);
     visitor.visit(m_timer);
 }
 
@@ -55,11 +55,8 @@ void ImageStyleValue::load_any_resources(DOM::Document& document)
         return;
     m_document = &document;
 
-    if (m_style_sheet) {
-        m_resource_request = fetch_an_external_image_for_a_stylesheet(m_url, { *m_style_sheet });
-    } else {
-        m_resource_request = fetch_an_external_image_for_a_stylesheet(m_url, { document });
-    }
+    VERIFY(m_source_declaration);
+    m_resource_request = fetch_an_external_image_for_a_stylesheet(m_url, { *m_source_declaration });
     if (m_resource_request) {
         m_resource_request->add_callbacks(
             [this, weak_this = make_weak_ptr()] {
@@ -177,10 +174,10 @@ Optional<Gfx::Color> ImageStyleValue::color_if_single_pixel_bitmap() const
     return {};
 }
 
-void ImageStyleValue::set_style_sheet(GC::Ptr<CSSStyleSheet> style_sheet)
+void ImageStyleValue::set_source_declaration(GC::Ptr<CSSStyleDeclaration> declaration)
 {
-    Base::set_style_sheet(style_sheet);
-    m_style_sheet = style_sheet;
+    Base::set_source_declaration(declaration);
+    m_source_declaration = declaration;
 }
 
 ValueComparingNonnullRefPtr<CSSStyleValue const> ImageStyleValue::absolutized(CSSPixelRect const&, Length::FontMetrics const&, Length::FontMetrics const&) const

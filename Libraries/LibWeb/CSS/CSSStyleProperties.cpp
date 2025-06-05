@@ -72,6 +72,12 @@ CSSStyleProperties::CSSStyleProperties(JS::Realm& realm, Computed computed, Read
     , m_properties(move(properties))
     , m_custom_properties(move(custom_properties))
 {
+    for (auto const& property : m_properties) {
+        const_cast<CSSStyleValue&>(*property.value).set_source_declaration(this);
+    }
+    for (auto const& custom_property : m_custom_properties) {
+        const_cast<CSSStyleValue&>(*custom_property.value.value).set_source_declaration(this);
+    }
     set_owner_node(move(owner_node));
 }
 
@@ -1381,6 +1387,8 @@ bool CSSStyleProperties::set_a_css_declaration(PropertyID property_id, NonnullRe
 {
     VERIFY(!is_computed());
 
+    const_cast<CSSStyleValue&>(*value).set_source_declaration(this);
+
     // FIXME: Handle logical property groups.
 
     for (auto& property : m_properties) {
@@ -1411,6 +1419,13 @@ void CSSStyleProperties::set_the_declarations(Vector<StyleProperty> properties, 
 {
     m_properties = move(properties);
     m_custom_properties = move(custom_properties);
+
+    for (auto const& property : m_properties) {
+        const_cast<CSSStyleValue&>(*property.value).set_source_declaration(this);
+    }
+    for (auto const& custom_property : m_custom_properties) {
+        const_cast<CSSStyleValue&>(*custom_property.value.value).set_source_declaration(this);
+    }
 }
 
 void CSSStyleProperties::set_declarations_from_text(StringView css_text)

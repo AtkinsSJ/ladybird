@@ -208,11 +208,6 @@ void CSSStyleRule::clear_caches()
 void CSSStyleRule::set_parent_style_sheet(CSSStyleSheet* parent_style_sheet)
 {
     Base::set_parent_style_sheet(parent_style_sheet);
-
-    // This is annoying: Style values that request resources need to know their CSSStyleSheet in order to fetch them.
-    for (auto const& property : m_declaration->properties()) {
-        const_cast<CSSStyleValue&>(*property.value).set_style_sheet(parent_style_sheet);
-    }
 }
 
 CSSStyleRule const* CSSStyleRule::parent_style_rule() const

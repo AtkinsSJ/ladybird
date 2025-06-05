@@ -30,7 +30,7 @@ public:
 private:
     ShorthandStyleValue(PropertyID shorthand, Vector<PropertyID> sub_properties, Vector<ValueComparingNonnullRefPtr<CSSStyleValue const>> values);
 
-    virtual void set_style_sheet(GC::Ptr<CSSStyleSheet>) override;
+    virtual void set_source_declaration(GC::Ptr<CSSStyleDeclaration>) override;
 
     struct Properties {
         PropertyID shorthand_property;

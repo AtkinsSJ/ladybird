@@ -397,7 +397,7 @@ public:
     [[nodiscard]] int to_font_slope() const;
     [[nodiscard]] int to_font_width() const;
 
-    virtual void set_style_sheet(GC::Ptr<CSSStyleSheet>) { }
+    virtual void set_source_declaration(GC::Ptr<CSSStyleDeclaration>) { }
     virtual void visit_edges(JS::Cell::Visitor&) const { }
 
     virtual bool equals(CSSStyleValue const& other) const = 0;

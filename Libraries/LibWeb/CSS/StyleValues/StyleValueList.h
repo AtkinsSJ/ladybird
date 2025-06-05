@@ -46,7 +46,7 @@ private:
     {
     }
 
-    virtual void set_style_sheet(GC::Ptr<CSSStyleSheet>) override;
+    virtual void set_source_declaration(GC::Ptr<CSSStyleDeclaration>) override;
 
     struct Properties {
         Separator separator;
