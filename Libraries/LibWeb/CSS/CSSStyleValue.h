@@ -86,7 +86,7 @@ class CSSStyleValue : public RefCounted<CSSStyleValue> {
 public:
     virtual ~CSSStyleValue() = default;
 
-    enum class Type {
+    enum class Type : u8 {
         Angle,
         BackgroundRepeat,
         BackgroundSize,

@@ -14,7 +14,7 @@
 
 namespace Web::CSS {
 
-enum class CorsMode {
+enum class CorsMode : u8 {
     NoCors,
     Cors,
 };
