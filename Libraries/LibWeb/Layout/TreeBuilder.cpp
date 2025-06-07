@@ -189,7 +189,8 @@ void TreeBuilder::create_pseudo_element_if_needed(DOM::Element& element, CSS::Ps
         return;
 
     auto initial_quote_nesting_level = m_quote_nesting_level;
-    auto [pseudo_element_content, final_quote_nesting_level] = pseudo_element_style->content(element, initial_quote_nesting_level);
+    DOM::ElementReference element_reference { element, pseudo_element };
+    auto [pseudo_element_content, final_quote_nesting_level] = pseudo_element_style->content(element_reference, initial_quote_nesting_level);
     m_quote_nesting_level = final_quote_nesting_level;
     auto pseudo_element_display = pseudo_element_style->display();
     // ::before and ::after only exist if they have content. `content: normal` computes to `none` for them.
@@ -217,6 +218,8 @@ void TreeBuilder::create_pseudo_element_if_needed(DOM::Element& element, CSS::Ps
         static_cast<ListItemBox&>(*pseudo_element_node).set_marker(list_item_marker);
         element.set_pseudo_element_node({}, CSS::PseudoElement::Marker, list_item_marker);
         pseudo_element_node->prepend_child(*list_item_marker);
+
+        // FIXME: Support counters on element::pseudo::marker
     }
 
     pseudo_element_node->set_generated_for(pseudo_element, element);
@@ -238,6 +241,9 @@ void TreeBuilder::create_pseudo_element_if_needed(DOM::Element& element, CSS::Ps
     element.set_pseudo_element_node({}, pseudo_element, pseudo_element_node);
     insert_node_into_inline_or_block_ancestor(*pseudo_element_node, pseudo_element_display, mode);
     pseudo_element_node->mutable_computed_values().set_content(pseudo_element_content);
+
+    DOM::ElementReference pseudo_element_reference { element, pseudo_element };
+    CSS::resolve_counters(pseudo_element_reference);
 }
 
 // Block nodes inside inline nodes are allowed, but to maintain the invariant that either all layout children are
@@ -584,6 +590,9 @@ void TreeBuilder::update_layout_tree(DOM::Node& dom_node, TreeBuilder::Context& 
                             top_layer_element->set_pseudo_element_node({}, CSS::PseudoElement::Backdrop, pseudo_element_node);
                             pseudo_element_node->set_generated_for(CSS::PseudoElement::Backdrop, top_layer_element);
                             insert_node_into_inline_or_block_ancestor(*pseudo_element_node, pseudo_element_display, AppendOrPrepend::Append);
+
+                            DOM::ElementReference backdrop_reference { top_layer_element, CSS::PseudoElement::Backdrop };
+                            CSS::resolve_counters(backdrop_reference);
                         }();
                         update_layout_tree(top_layer_element, context, should_create_layout_node ? MustCreateSubtree::Yes : MustCreateSubtree::No);
                     }
@@ -725,6 +734,8 @@ void TreeBuilder::update_layout_tree_after_children(DOM::Node& dom_node, GC::Ref
         static_cast<ListItemBox&>(*layout_node).set_marker(list_item_marker);
         element.set_pseudo_element_node({}, CSS::PseudoElement::Marker, list_item_marker);
         layout_node->prepend_child(*list_item_marker);
+        DOM::ElementReference marker_reference { element, CSS::PseudoElement::Marker };
+        CSS::resolve_counters(marker_reference);
     }
 
     if (is<SVG::SVGGraphicsElement>(dom_node)) {

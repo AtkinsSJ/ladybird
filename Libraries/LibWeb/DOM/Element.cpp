@@ -17,6 +17,7 @@
 #include <LibWeb/Bindings/MainThreadVM.h>
 #include <LibWeb/CSS/CSSStyleProperties.h>
 #include <LibWeb/CSS/ComputedProperties.h>
+#include <LibWeb/CSS/CountersSet.h>
 #include <LibWeb/CSS/Parser/Parser.h>
 #include <LibWeb/CSS/PropertyID.h>
 #include <LibWeb/CSS/SelectorEngine.h>
@@ -124,6 +125,8 @@ void Element::visit_edges(Cell::Visitor& visitor)
         for (auto& registered_intersection_observers : *m_registered_intersection_observers)
             visitor.visit(registered_intersection_observers.observer);
     }
+    if (m_counters_set)
+        m_counters_set->visit_edges(visitor);
 }
 
 // https://dom.spec.whatwg.org/#dom-element-getattribute

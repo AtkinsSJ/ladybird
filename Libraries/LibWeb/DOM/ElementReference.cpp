@@ -5,6 +5,7 @@
  */
 
 #include <LibWeb/DOM/ElementReference.h>
+#include <LibWeb/Layout/Node.h>
 
 namespace Web::DOM {
 
@@ -19,11 +20,51 @@ void ElementReference::visit(GC::Cell::Visitor& visitor) const
     visitor.visit(m_element);
 }
 
+GC::Ptr<Layout::NodeWithStyle> ElementReference::layout_node()
+{
+    if (m_pseudo_element.has_value())
+        return m_element->get_pseudo_element_node(*m_pseudo_element);
+    return m_element->layout_node();
+}
+
 GC::Ptr<Element const> ElementReference::parent_element() const
 {
     if (m_pseudo_element.has_value())
         return m_element;
     return m_element->parent_element();
+}
+
+Optional<ElementReference> ElementReference::walk_layout_tree(WalkMethod walk_method)
+{
+    GC::Ptr<Layout::Node> node = layout_node();
+    if (!node)
+        return OptionalNone {};
+
+    while (true) {
+        switch (walk_method) {
+        case WalkMethod::Previous:
+            node = node->previous_in_pre_order();
+            break;
+        case WalkMethod::PreviousSibling:
+            node = node->previous_sibling();
+            break;
+        }
+        if (!node)
+            return OptionalNone {};
+
+        if (auto* previous_element = as_if<Element>(node->dom_node()))
+            return ElementReference { *previous_element };
+
+        if (node->is_generated())
+            return ElementReference { *node->pseudo_element_generator(), node->generated_for_pseudo_element() };
+    }
+}
+
+bool ElementReference::is_before(ElementReference const& other) const
+{
+    auto this_node = layout_node();
+    auto other_node = other.layout_node();
+    return this_node && other_node && this_node->is_before(*other_node);
 }
 
 GC::Ptr<CSS::ComputedProperties const> ElementReference::computed_properties() const
@@ -33,16 +74,44 @@ GC::Ptr<CSS::ComputedProperties const> ElementReference::computed_properties() c
     return m_element->computed_properties();
 }
 
+bool ElementReference::has_non_empty_counters_set() const
+{
+    if (m_pseudo_element.has_value())
+        return m_element->get_pseudo_element(*m_pseudo_element)->has_non_empty_counters_set();
+    return m_element->has_non_empty_counters_set();
+}
+
+Optional<CSS::CountersSet const&> ElementReference::counters_set() const
+{
+    if (m_pseudo_element.has_value())
+        return m_element->get_pseudo_element(*m_pseudo_element)->counters_set();
+    return m_element->counters_set();
+}
+
 CSS::CountersSet& ElementReference::ensure_counters_set()
 {
-    // FIXME: Handle pseudo-elements
+    if (m_pseudo_element.has_value())
+        return m_element->get_pseudo_element(*m_pseudo_element)->ensure_counters_set();
     return m_element->ensure_counters_set();
 }
 
 void ElementReference::set_counters_set(OwnPtr<CSS::CountersSet>&& counters_set)
 {
-    // FIXME: Handle pseudo-elements
+    if (m_pseudo_element.has_value())
+        m_element->get_pseudo_element(*m_pseudo_element)->set_counters_set(move(counters_set));
     m_element->set_counters_set(move(counters_set));
+}
+
+String ElementReference::debug_description() const
+{
+    if (m_pseudo_element.has_value()) {
+        StringBuilder builder;
+        builder.append(m_element->debug_description());
+        builder.append("::"sv);
+        builder.append(CSS::pseudo_element_name(*m_pseudo_element));
+        return builder.to_string_without_validation();
+    }
+    return m_element->debug_description();
 }
 
 }

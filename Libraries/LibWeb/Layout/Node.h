@@ -44,6 +44,7 @@ public:
 
     DOM::Element const* pseudo_element_generator() const;
     DOM::Element* pseudo_element_generator();
+    Optional<CSS::PseudoElement> generated_for_pseudo_element() const { return m_generated_for; }
 
     bool needs_layout_update() const { return m_needs_layout_update; }
     void set_needs_layout_update(DOM::SetNeedsLayoutReason);
