@@ -1,4 +1,79 @@
 {
+  "counter-style": {
+    "spec": "https://drafts.csswg.org/css-counter-styles-3/#the-counter-style-rule",
+    "descriptors": {
+      "additive-symbols": {
+        "syntax": [
+          "[ <integer [0,∞]> && <symbol> ]#"
+        ]
+      },
+      "fallback": {
+        "initial": "decimal",
+        "syntax": [
+          "<counter-style-name>"
+        ]
+      },
+      "negative": {
+        "initial": "-",
+        "syntax": [
+          "<symbol> <symbol>?"
+        ]
+      },
+      "pad": {
+        "initial": "0 \"\"",
+        "syntax": [
+          "<integer [0,∞]> && <symbol>"
+        ]
+      },
+      "prefix": {
+        "initial": "\"\"",
+        "syntax": [
+          "<symbol>"
+        ]
+      },
+      "range": {
+        "initial": "auto",
+        "syntax": [
+          "[ [ <integer> | infinite ]{2} ]#",
+          "auto"
+        ]
+      },
+      "speak-as": {
+        "initial": "auto",
+        "syntax": [
+          "auto",
+          "bullets",
+          "numbers",
+          "words",
+          "spell-out",
+          "<counter-style-name>"
+        ]
+      },
+      "suffix": {
+        "initial": "\". \"",
+        "syntax": [
+          "<symbol>"
+        ]
+      },
+      "symbols": {
+        "syntax": [
+          "<symbol>+"
+        ]
+      },
+      "system": {
+        "initial": "symbolic",
+        "syntax": [
+          "cyclic",
+          "numeric",
+          "alphabetic",
+          "symbolic",
+          "additive",
+          "fixed <integer>?",
+          "extends <counter-style-name>"
+        ]
+      }
+    }
+  },
   "font-face": {
     "spec": "https://drafts.csswg.org/css-fonts-4/#at-font-face-rule",
     "descriptors": {
