@@ -2,5 +2,5 @@ Harness status: OK
 
 Found 1 tests
 
-1 Pass
-Pass	Form-related operations and attributes should throw NotSupportedErrors for non-form-associated custom elements.
+1 Fail
+Fail	Form-related operations and attributes should throw NotSupportedErrors for non-form-associated custom elements.

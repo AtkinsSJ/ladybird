@@ -1,7 +1,3 @@
-Harness status: OK
+Harness status: Error
 
-Found 2 tests
-
-2 Pass
-Pass	ElementInternals.setFormValue(null) clears submission value
-Pass	ElementInternals.setFormValue(undefined) clears submission value
+Found 0 tests
