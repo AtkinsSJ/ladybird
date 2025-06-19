@@ -30,6 +30,7 @@ public:
     bool is_before(AbstractElement const&) const;
 
     GC::Ptr<CSS::ComputedProperties const> computed_properties() const;
+    RefPtr<CSS::CSSStyleValue const> get_custom_property(FlyString const& name) const;
 
     bool has_non_empty_counters_set() const;
     Optional<CSS::CountersSet const&> counters_set() const;
