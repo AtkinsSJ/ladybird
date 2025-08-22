@@ -71,6 +71,39 @@ bool CSSNumericValue::equals_for_bindings(Vector<CSSNumberish> values) const
     return true;
 }
 
+// https://drafts.css-houdini.org/css-typed-om-1/#dom-cssnumericvalue-to
+WebIDL::ExceptionOr<GC::Ref<CSSNumericValue>> CSSNumericValue::to(FlyString const& unit)
+{
+    // The to(unit) method converts an existing CSSNumericValue this into another one with the specified unit, if
+    // possible. When called, it must perform the following steps:
+
+    // 1. Let type be the result of creating a type from unit. If type is failure, throw a SyntaxError.
+    auto maybe_type = NumericType::create_from_unit(unit);
+    if (!maybe_type.has_value())
+        return WebIDL::SyntaxError::create(realm(), "Unrecognized unit"_utf16);
+
+    // 2. Let sum be the result of creating a sum value from this. If sum is failure, throw a TypeError.
+    auto sum = create_a_sum_value();
+    if (!sum.has_value())
+        return WebIDL::SimpleException { WebIDL::SimpleExceptionType::TypeError, "Unable to create a sum from input"sv };
+
+    // 3. If sum has more than one item, throw a TypeError.
+    //    Otherwise, let item be the result of creating a CSSUnitValue from the sole item in sum, then converting it to
+    //    unit. If item is failure, throw a TypeError.
+    if (sum->size() > 1)
+        return WebIDL::SimpleException { WebIDL::SimpleExceptionType::TypeError, "Sum contains more than one item"sv };
+    auto item = CSSUnitValue::create_from_sum_value_item(realm(), sum->first());
+    if (!item)
+        return WebIDL::SimpleException { WebIDL::SimpleExceptionType::TypeError, "Unable to create CSSUnitValue from input"sv };
+
+    auto converted_item = item->converted_to_unit(unit);
+    if (!converted_item)
+        return WebIDL::SimpleException { WebIDL::SimpleExceptionType::TypeError, "Unable to convert input to given unit"sv };
+
+    // 4. Return item.
+    return converted_item.release_nonnull();
+}
+
 // https://drafts.css-houdini.org/css-typed-om-1/#dom-cssnumericvalue-type
 CSSNumericType CSSNumericValue::type_for_bindings() const
 {

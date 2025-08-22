@@ -22,6 +22,29 @@ GC::Ref<CSSUnitValue> CSSUnitValue::create(JS::Realm& realm, double value, FlySt
     return realm.create<CSSUnitValue>(realm, value, move(unit), numeric_type.release_value());
 }
 
+// https://drafts.css-houdini.org/css-typed-om-1/#create-a-cssunitvalue-from-a-sum-value-item
+GC::Ptr<CSSUnitValue> CSSUnitValue::create_from_sum_value_item(JS::Realm& realm, SumValueItem const& item)
+{
+    // 1. If item has more than one entry in its unit map, return failure.
+    if (item.unit_map.size() > 1)
+        return {};
+
+    // 2. If item has no entries in its unit map, return a new CSSUnitValue whose unit internal slot is set to
+    //    "number", and whose value internal slot is set to item’s value.
+    if (item.unit_map.is_empty())
+        return CSSUnitValue::create(realm, item.value, "number"_fly_string);
+
+    // 3. Otherwise, item has a single entry in its unit map. If that entry’s value is anything other than 1, return
+    //    failure.
+    auto single_type_entry = item.unit_map.begin();
+    if (single_type_entry->value != 1)
+        return {};
+
+    // 4. Otherwise, return a new CSSUnitValue whose unit internal slot is set to that entry’s key, and whose value
+    //    internal slot is set to item’s value.
+    return CSSUnitValue::create(realm, item.value, single_type_entry->key);
+}
+
 // https://drafts.css-houdini.org/css-typed-om-1/#dom-cssunitvalue-cssunitvalue
 WebIDL::ExceptionOr<GC::Ref<CSSUnitValue>> CSSUnitValue::construct_impl(JS::Realm& realm, double value, FlyString unit)
 {
@@ -95,6 +118,20 @@ String CSSUnitValue::serialize_unit_value(Optional<double> minimum, Optional<dou
     return s.to_string_without_validation();
 }
 
+// https://drafts.css-houdini.org/css-typed-om-1/#convert-a-cssunitvalue
+GC::Ptr<CSSUnitValue> CSSUnitValue::convert_to_unit(FlyString const& unit) const
+{
+    // 1. Let old unit be the value of this’s unit internal slot, and old value be the value of this’s value internal
+    //    slot.
+    auto old_unit = m_unit;
+    auto old_value = m_value;
+
+    // 2. If old unit and unit are not compatible units, return failure.
+
+    // 3. Return a new CSSUnitValue whose unit internal slot is set to unit, and whose value internal slot is set to
+    //    old value multiplied by the conversation ratio between old unit and unit.
+}
+
 // https://drafts.css-houdini.org/css-typed-om-1/#equal-numeric-value
 bool CSSUnitValue::is_equal_numeric_value(GC::Ref<CSSNumericValue> other) const
 {
@@ -108,6 +145,24 @@ bool CSSUnitValue::is_equal_numeric_value(GC::Ref<CSSNumericValue> other) const
     //    or false otherwise.
     return m_unit == other_unit_value->m_unit
         && m_value == other_unit_value->m_value;
+}
+
+// https://drafts.css-houdini.org/css-typed-om-1/#create-a-sum-value
+Optional<SumValue> CSSUnitValue::create_a_sum_value() const
+{
+    // 1. Let unit be the value of this’s unit internal slot, and value be the value of this’s value internal slot.
+    auto& unit = m_unit;
+    auto value = m_value;
+
+    // FIXME: 2. If unit is a member of a set of compatible units, and is not the set’s canonical unit, multiply value
+    //           by the conversion ratio between unit and the canonical unit, and change unit to the canonical unit.
+
+    // 3. If unit is "number", return «(value, «[ ]»)».
+    if (unit == "number"_fly_string)
+        return SumValue { SumValueItem { value, {} } };
+
+    // 4. Otherwise, return «(value, «[unit → 1]»)».
+    return SumValue { SumValueItem { value, { { unit, 1 } } } };
 }
 
 }
