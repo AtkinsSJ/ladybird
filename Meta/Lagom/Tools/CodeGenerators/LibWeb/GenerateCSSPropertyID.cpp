@@ -283,7 +283,6 @@ bool property_accepts_time(PropertyID, Time const&);
 bool property_is_shorthand(PropertyID);
 Vector<PropertyID> const& longhands_for_shorthand(PropertyID);
 Vector<PropertyID> const& expanded_longhands_for_shorthand(PropertyID);
-bool property_maps_to_shorthand(PropertyID);
 Vector<PropertyID> const& shorthands_for_longhand(PropertyID);
 bool property_is_positional_value_list_shorthand(PropertyID);
 
@@ -1318,27 +1317,6 @@ Vector<PropertyID> const& expanded_longhands_for_shorthand(PropertyID property_i
             }
         }
     });
-
-    generator.append(R"~~~(
-bool property_maps_to_shorthand(PropertyID property_id)
-{
-    switch (property_id) {
-)~~~");
-    for (auto const& longhand : shorthands_for_longhand_map.keys()) {
-        auto property_generator = generator.fork();
-        property_generator.set("name:titlecase", title_casify(longhand));
-        property_generator.append(R"~~~(
-        case PropertyID::@name:titlecase@:
-)~~~");
-    }
-
-    generator.append(R"~~~(
-            return true;
-        default:
-            return false;
-        }
-}
-)~~~");
 
     generator.append(R"~~~(
 Vector<PropertyID> const& shorthands_for_longhand(PropertyID property_id)

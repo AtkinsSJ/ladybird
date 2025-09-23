@@ -1000,9 +1000,7 @@ String CSSStyleProperties::serialized() const
             continue;
 
         // 3. If property maps to one or more shorthand properties, let shorthands be an array of those shorthand properties, in preferred order.
-        if (property_maps_to_shorthand(property)) {
-            auto shorthands = shorthands_for_longhand(property);
-
+        if (auto shorthands = shorthands_for_longhand(property); !shorthands.is_empty()) {
             // 4. Shorthand loop: For each shorthand in shorthands, follow these substeps:
             for (auto shorthand : shorthands) {
                 // 1. Let longhands be an array consisting of all CSS declarations in declaration block’s declarations
