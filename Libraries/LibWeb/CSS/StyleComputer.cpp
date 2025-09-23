@@ -661,7 +661,7 @@ void StyleComputer::for_each_property_expanding_shorthands(PropertyID property_i
         // Ensure we keep the longhand around until it can be resolved.
         set_longhand_property(property_id, value);
         auto pending_substitution_value = PendingSubstitutionStyleValue::create();
-        for (auto longhand_id : longhands_for_shorthand(property_id)) {
+        for (auto longhand_id : direct_longhands_for_shorthand(property_id)) {
             for_each_property_expanding_shorthands(longhand_id, pending_substitution_value, set_longhand_property);
         }
         return;
@@ -751,7 +751,7 @@ void StyleComputer::for_each_property_expanding_shorthands(PropertyID property_i
         // We don't directly call `set_longhand_property()` because the longhands might have longhands of their own.
         // (eg `grid` -> `grid-template` -> `grid-template-areas` & `grid-template-rows` & `grid-template-columns`)
         VERIFY(value.is_css_wide_keyword() || value.is_guaranteed_invalid());
-        for (auto longhand : longhands_for_shorthand(property_id))
+        for (auto longhand : direct_longhands_for_shorthand(property_id))
             for_each_property_expanding_shorthands(longhand, value, set_longhand_property);
         return;
     }

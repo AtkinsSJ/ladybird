@@ -281,9 +281,10 @@ bool property_accepts_resolution(PropertyID, Resolution const&);
 bool property_accepts_time(PropertyID, Time const&);
 
 bool property_is_shorthand(PropertyID);
-Vector<PropertyID> const& longhands_for_shorthand(PropertyID);
+Vector<PropertyID> const& direct_longhands_for_shorthand(PropertyID);
 Vector<PropertyID> const& expanded_longhands_for_shorthand(PropertyID);
-Vector<PropertyID> const& shorthands_for_longhand(PropertyID);
+Vector<PropertyID> const& longhands_to_parse_for_shorthand(PropertyID);
+Vector<PropertyID> const& shorthands_for_property(PropertyID);
 bool property_is_positional_value_list_shorthand(PropertyID);
 
 size_t property_maximum_value_count(PropertyID);
@@ -1194,56 +1195,74 @@ bool property_is_shorthand(PropertyID property_id)
 }
 )~~~");
 
-    generator.append(R"~~~(
-Vector<PropertyID> const& longhands_for_shorthand(PropertyID property_id)
-{
-    switch (property_id) {
-)~~~");
-    Function<Vector<String>(String const&)> get_longhands = [&](String const& property_id) {
-        auto object = properties.get_object(property_id);
-        VERIFY(object.has_value());
+    enum class IncludeResetOnly : u8 {
+        No,
+        Yes,
+    };
+    auto get_longhands = [&](String const& property_id, IncludeResetOnly include_reset_only) {
+        auto object = properties.get_object(property_id).release_value();
 
-        auto longhands_json_array = object.value().get_array("longhands"sv);
+        auto longhands_json_array = object.get_array("longhands"sv);
         VERIFY(longhands_json_array.has_value());
 
         Vector<String> longhands;
 
-        longhands_json_array.value().for_each([&](auto longhand_value) {
+        longhands_json_array.value().for_each([&](auto const& longhand_value) {
             longhands.append(longhand_value.as_string());
         });
+
+        if (include_reset_only == IncludeResetOnly::Yes) {
+            auto reset_only_longhands = object.get_array("reset-only-longhands"sv);
+            if (reset_only_longhands.has_value()) {
+                reset_only_longhands->for_each([&](auto const& longhand_value) {
+                    longhands.append(longhand_value.as_string());
+                });
+            }
+        }
 
         return longhands;
     };
 
-    properties.for_each_member([&](auto& name, auto& value) {
-        if (is_legacy_alias(value.as_object()))
-            return;
+    auto generate_longhands_for_shorthand = [&](StringView function_name, IncludeResetOnly include_reset_only) {
+        generator.set("function_name", function_name);
+        generator.append(R"~~~(
+Vector<PropertyID> const& @function_name@(PropertyID property_id)
+{
+    switch (property_id) {
+)~~~");
+        properties.for_each_member([&](auto& name, auto& value) {
+            if (is_legacy_alias(value.as_object()))
+                return;
 
-        if (value.as_object().has("longhands"sv)) {
-            auto property_generator = generator.fork();
-            property_generator.set("name:titlecase", title_casify(name));
-            StringBuilder builder;
-            for (auto longhand : get_longhands(name)) {
-                if (!builder.is_empty())
-                    builder.append(", "sv);
-                builder.appendff("PropertyID::{}", title_casify(longhand));
-            }
-            property_generator.set("longhands", builder.to_byte_string());
-            property_generator.append(R"~~~(
+            if (value.as_object().has("longhands"sv)) {
+                auto property_generator = generator.fork();
+                property_generator.set("name:titlecase", title_casify(name));
+                StringBuilder builder;
+                for (auto const& longhand : get_longhands(name, include_reset_only)) {
+                    if (!builder.is_empty())
+                        builder.append(", "sv);
+                    builder.appendff("PropertyID::{}", title_casify(longhand));
+                }
+                property_generator.set("longhands", builder.to_string_without_validation());
+                property_generator.append(R"~~~(
         case PropertyID::@name:titlecase@: {
             static Vector<PropertyID> longhands = { @longhands@ };
             return longhands;
         })~~~");
-        }
-    });
+            }
+        });
 
-    generator.append(R"~~~(
+        generator.append(R"~~~(
         default:
             static Vector<PropertyID> empty_longhands;
             return empty_longhands;
         }
 }
 )~~~");
+    };
+
+    generate_longhands_for_shorthand("direct_longhands_for_shorthand"sv, IncludeResetOnly::Yes);
+    generate_longhands_for_shorthand("longhands_to_parse_for_shorthand"sv, IncludeResetOnly::No);
 
     generator.append(R"~~~(
 Vector<PropertyID> const& expanded_longhands_for_shorthand(PropertyID property_id)
@@ -1254,7 +1273,7 @@ Vector<PropertyID> const& expanded_longhands_for_shorthand(PropertyID property_i
     Function<Vector<String>(String const&)> get_expanded_longhands = [&](String const& property_id) {
         Vector<String> expanded_longhands;
 
-        for (auto const& longhand_id : get_longhands(property_id)) {
+        for (auto const& longhand_id : get_longhands(property_id, IncludeResetOnly::Yes)) {
 
             auto property = properties.get_object(longhand_id);
 
@@ -1306,11 +1325,15 @@ Vector<PropertyID> const& expanded_longhands_for_shorthand(PropertyID property_i
         if (is_legacy_alias(value.as_object()))
             return;
 
-        if (value.as_object().has("longhands"sv)) {
-            auto longhands = value.as_object().get("longhands"sv);
-            VERIFY(longhands.has_value() && longhands->is_array());
-            auto longhand_values = longhands->as_array();
-            for (auto& longhand : longhand_values.values()) {
+        if (auto longhands = value.as_object().get_array("longhands"sv); longhands.has_value()) {
+            for (auto& longhand : longhands->values()) {
+                VERIFY(longhand.is_string());
+                auto& longhand_name = longhand.as_string();
+                shorthands_for_longhand_map.ensure(longhand_name).append(name);
+            }
+        }
+        if (auto longhands = value.as_object().get_array("reset-only-longhands"sv); longhands.has_value()) {
+            for (auto& longhand : longhands->values()) {
                 VERIFY(longhand.is_string());
                 auto& longhand_name = longhand.as_string();
                 shorthands_for_longhand_map.ensure(longhand_name).append(name);
@@ -1319,7 +1342,7 @@ Vector<PropertyID> const& expanded_longhands_for_shorthand(PropertyID property_i
     });
 
     generator.append(R"~~~(
-Vector<PropertyID> const& shorthands_for_longhand(PropertyID property_id)
+Vector<PropertyID> const& shorthands_for_property(PropertyID property_id)
 {
     switch (property_id) {
 )~~~");

@@ -203,6 +203,7 @@ Optional<StyleProperty> CSSStyleProperties::property(PropertyID property_id) con
         if (property.property_id == property_id)
             return property;
     }
+    dbgln("Couldn't find {}", string_from_property_id(property_id));
     return {};
 }
 
@@ -234,6 +235,7 @@ Optional<StyleProperty const&> CSSStyleProperties::custom_property(FlyString con
 // https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-setproperty
 WebIDL::ExceptionOr<void> CSSStyleProperties::set_property(StringView property_name, StringView value, StringView priority)
 {
+    dbgln("Set property {} to '{}'", property_name, value);
     // 1. If the computed flag is set, then throw a NoModificationAllowedError exception.
     if (is_computed())
         return WebIDL::NoModificationAllowedError::create(realm(), "Cannot modify properties in result of getComputedStyle()"_utf16);
@@ -277,6 +279,7 @@ WebIDL::ExceptionOr<void> CSSStyleProperties::set_property(StringView property_n
             // 1. Let longhand result be the result of set the CSS declaration longhand with the appropriate value(s) from component value list,
             //    with the important flag set if priority is not the empty string, and unset otherwise, and with the list of declarations being the declarations.
             // 2. If longhand result is true, let updated be true.
+            dbgln("-> Setting {} to {}", string_from_property_id(longhand_property_id), longhand_value.to_string(SerializationMode::Normal));
             updated |= set_a_css_declaration(longhand_property_id, longhand_value, !priority.is_empty() ? Important::Yes : Important::No);
         });
     }
@@ -451,6 +454,7 @@ RefPtr<StyleValue const> CSSStyleProperties::get_property_style_value(StringView
 // https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-getpropertyvalue
 Optional<StyleProperty> CSSStyleProperties::get_property_internal(PropertyID property_id) const
 {
+    dbgln("Get property internal");
     // 2. If property is a shorthand property, then follow these substeps:
     if (property_is_shorthand(property_id)) {
         // 1. Let list be a new empty array.
@@ -458,21 +462,25 @@ Optional<StyleProperty> CSSStyleProperties::get_property_internal(PropertyID pro
         Optional<Important> last_important_flag;
 
         // 2. For each longhand property longhand that property maps to, in canonical order, follow these substeps:
-        Vector<PropertyID> longhand_ids = longhands_for_shorthand(property_id);
+        Vector<PropertyID> longhand_ids = direct_longhands_for_shorthand(property_id);
         for (auto longhand_property_id : longhand_ids) {
             // 1. If longhand is a case-sensitive match for a property name of a CSS declaration in the declarations,
             //    let declaration be that CSS declaration, or null otherwise.
             auto declaration = get_property_internal(longhand_property_id);
 
             // 2. If declaration is null, then return the empty string.
-            if (!declaration.has_value())
+            if (!declaration.has_value()) {
+                dbgln("- no declaration for {}", string_from_property_id(longhand_property_id));
                 return {};
+            }
 
             // 3. Append the declaration to list.
             list.append(declaration->value);
 
-            if (last_important_flag.has_value() && declaration->important != *last_important_flag)
+            if (last_important_flag.has_value() && declaration->important != *last_important_flag) {
+                dbgln("- important doesn't match for {}", string_from_property_id(longhand_property_id));
                 return {};
+            }
             last_important_flag = declaration->important;
         }
 
@@ -852,7 +860,7 @@ RefPtr<StyleValue const> CSSStyleProperties::style_value_for_computed_property(L
             return get_computed_value(property_id);
 
         // Handle shorthands in a generic way
-        auto longhand_ids = longhands_for_shorthand(property_id);
+        auto longhand_ids = direct_longhands_for_shorthand(property_id);
         StyleValueVector longhand_values;
         longhand_values.ensure_capacity(longhand_ids.size());
         for (auto longhand_id : longhand_ids)
@@ -884,7 +892,7 @@ WebIDL::ExceptionOr<String> CSSStyleProperties::remove_property(StringView prope
 
         // 5. If property is a shorthand property, for each longhand property longhand that property maps to:
         if (property_is_shorthand(property_id)) {
-            for (auto longhand_property_id : longhands_for_shorthand(property_id)) {
+            for (auto longhand_property_id : direct_longhands_for_shorthand(property_id)) {
                 // 1. If longhand is not a property name of a CSS declaration in the declarations, continue.
                 // 2. Remove that CSS declaration and let removed be true.
                 removed |= remove_declaration(longhand_property_id);
@@ -954,7 +962,7 @@ String CSSStyleProperties::serialized() const
         //         serialize a shorthand directly we should also mark it's longhands as serialized to avoid serializing
         //         them separately.
         if (property_is_shorthand(property)) {
-            for (auto longhand : longhands_for_shorthand(property))
+            for (auto longhand : direct_longhands_for_shorthand(property))
                 append_property_to_already_serialized(longhand);
         }
     };
@@ -1000,7 +1008,7 @@ String CSSStyleProperties::serialized() const
             continue;
 
         // 3. If property maps to one or more shorthand properties, let shorthands be an array of those shorthand properties, in preferred order.
-        if (auto shorthands = shorthands_for_longhand(property); !shorthands.is_empty()) {
+        if (auto shorthands = shorthands_for_property(property); !shorthands.is_empty()) {
             // 4. Shorthand loop: For each shorthand in shorthands, follow these substeps:
             for (auto shorthand : shorthands) {
                 // 1. Let longhands be an array consisting of all CSS declarations in declaration block’s declarations
@@ -1009,7 +1017,7 @@ String CSSStyleProperties::serialized() const
                 Vector<StyleProperty> longhands;
 
                 for (auto const& longhand_declaration : m_properties) {
-                    if (!already_serialized.contains(longhand_declaration.property_id) && shorthands_for_longhand(longhand_declaration.property_id).contains_slow(shorthand))
+                    if (!already_serialized.contains(longhand_declaration.property_id) && shorthands_for_property(longhand_declaration.property_id).contains_slow(shorthand))
                         longhands.append(longhand_declaration);
                 }
 
@@ -1022,7 +1030,7 @@ String CSSStyleProperties::serialized() const
 
                 // 4. Append all CSS declarations in longhands that have a property name that maps to shorthand to current longhands.
                 for (auto const& longhand : longhands) {
-                    if (shorthands_for_longhand(longhand.property_id).contains_slow(shorthand))
+                    if (shorthands_for_property(longhand.property_id).contains_slow(shorthand))
                         current_longhands.append(longhand);
                 }
 
@@ -1155,7 +1163,7 @@ String CSSStyleProperties::serialize_a_css_value(Vector<StyleProperty> list) con
         return String {};
 
     // 1. Let shorthand be the first shorthand property, in preferred order, that exactly maps to all of the longhand properties in list.
-    Optional<PropertyID> shorthand = shorthands_for_longhand(list.first().property_id).first_matching([&](PropertyID shorthand) {
+    Optional<PropertyID> shorthand = shorthands_for_property(list.first().property_id).first_matching([&](PropertyID shorthand) {
         auto longhands_for_potential_shorthand = expanded_longhands_for_shorthand(shorthand);
 
         // The potential shorthand exactly maps to all of the longhand properties in list if:
@@ -1173,7 +1181,7 @@ String CSSStyleProperties::serialize_a_css_value(Vector<StyleProperty> list) con
 
     // 3. Otherwise, serialize a CSS value from a hypothetical declaration of the property shorthand with its value representing the combined values of the declarations in list.
     Function<ValueComparingNonnullRefPtr<ShorthandStyleValue const>(PropertyID)> make_shorthand_value = [&](PropertyID shorthand_id) {
-        auto longhand_ids = longhands_for_shorthand(shorthand_id);
+        auto longhand_ids = direct_longhands_for_shorthand(shorthand_id);
         Vector<ValueComparingNonnullRefPtr<StyleValue const>> longhand_values;
 
         for (auto longhand_id : longhand_ids) {

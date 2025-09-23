@@ -42,6 +42,9 @@ ValueComparingRefPtr<StyleValue const> ShorthandStyleValue::longhand(PropertyID 
 
 String ShorthandStyleValue::to_string(SerializationMode mode) const
 {
+    // If any reset-only subproperties are not their initial value, we can't serialize.
+    dbgln("ShorthandStyleValue::to_string() for {}", string_from_property_id(m_properties.shorthand_property));
+
     // If all the longhands are the same CSS-wide keyword, just return that once.
     Optional<Keyword> built_in_keyword;
     bool all_same_keyword = true;
@@ -66,6 +69,7 @@ String ShorthandStyleValue::to_string(SerializationMode mode) const
         if (all_same_keyword)
             return MUST(String::from_utf8(string_from_keyword(built_in_keyword.value())));
 
+        dbgln("Keyword thing");
         return ""_string;
     }
 
@@ -241,6 +245,8 @@ String ShorthandStyleValue::to_string(SerializationMode mode) const
     }
     case PropertyID::Border: {
         // `border` only has a reasonable value if border-image is it's initial value (in which case it is omitted)
+        auto image = longhand(PropertyID::BorderImage);
+        VERIFY(image);
         if (!longhand(PropertyID::BorderImage)->equals(property_initial_value(PropertyID::BorderImage)))
             return ""_string;
 
@@ -366,6 +372,7 @@ String ShorthandStyleValue::to_string(SerializationMode mode) const
     case PropertyID::Flex:
         return MUST(String::formatted("{} {} {}", longhand(PropertyID::FlexGrow)->to_string(mode), longhand(PropertyID::FlexShrink)->to_string(mode), longhand(PropertyID::FlexBasis)->to_string(mode)));
     case PropertyID::Font: {
+        dbgln("Serialize font");
         auto font_style = longhand(PropertyID::FontStyle);
         auto font_variant = longhand(PropertyID::FontVariant);
         auto font_weight = longhand(PropertyID::FontWeight);

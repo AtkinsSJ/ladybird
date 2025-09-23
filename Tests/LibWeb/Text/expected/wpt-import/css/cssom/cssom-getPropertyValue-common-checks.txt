@@ -2,10 +2,11 @@ Harness status: OK
 
 Found 11 tests
 
-11 Pass
+10 Pass
+1 Fail
 Pass	All properties can serialize 'initial'
 Pass	All properties (except 'all') can serialize their initial value (computed)
-Pass	All properties (except 'all') can serialize their initial value (specified)
+Fail	All properties (except 'all') can serialize their initial value (specified)
 Pass	All shorthands can serialize their longhands set to 'initial'
 Pass	All shorthands (except 'all') can serialize their longhands set to their initial value
 Pass	All aliases can serialize target property set to 'initial'

@@ -509,7 +509,9 @@
     "longhands": [
       "border-width",
       "border-style",
-      "border-color",
+      "border-color"
+    ],
+    "reset-only-longhands": [
       "border-image"
     ],
     "needs-layout-for-getcomputedstyle": true
@@ -1615,7 +1617,6 @@
   "font": {
     "inherited": true,
     "initial": "normal medium serif",
-    "__comment": "FIXME: Handle properties that are reset implicitly. https://drafts.csswg.org/css-fonts/#reset-implicitly",
     "longhands": [
       "font-family",
       "font-size",
@@ -1624,6 +1625,13 @@
       "font-variant",
       "font-weight",
       "line-height"
+    ],
+    "__comment": "The spec lists each font-variant longhand individually, we can just rely on it being set as a longhand instead. FIXME: Add font-optical-sizing and font-size-adjust.",
+    "reset-only-longhands": [
+      "font-feature-settings",
+      "font-kerning",
+      "font-language-override",
+      "font-variation-settings"
     ]
   },
   "font-family": {

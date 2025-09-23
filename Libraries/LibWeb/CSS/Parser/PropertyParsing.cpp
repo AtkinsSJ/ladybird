@@ -847,7 +847,7 @@ Parser::ParseErrorOr<NonnullRefPtr<StyleValue const>> Parser::parse_css_value(Pr
     }
 
     // We have multiple values, but the property claims to accept only a single one, check if it's a shorthand property.
-    auto unassigned_properties = longhands_for_shorthand(property_id);
+    auto unassigned_properties = longhands_to_parse_for_shorthand(property_id);
     if (unassigned_properties.is_empty())
         return ParseError::SyntaxError;
 
@@ -905,7 +905,7 @@ Parser::ParseErrorOr<NonnullRefPtr<StyleValue const>> Parser::parse_css_value(Pr
 
 RefPtr<StyleValue const> Parser::parse_positional_value_list_shorthand(PropertyID property_id, TokenStream<ComponentValue>& tokens)
 {
-    auto const& longhands = longhands_for_shorthand(property_id);
+    auto const& longhands = longhands_to_parse_for_shorthand(property_id);
 
     Vector<ValueComparingNonnullRefPtr<StyleValue const>> parsed_values;
 
@@ -1626,13 +1626,13 @@ RefPtr<StyleValue const> Parser::parse_border_value(PropertyID property_id, Toke
 
         if (property_and_value->property == width_property) {
             VERIFY(!border_width);
-            border_width = make_single_value_shorthand(width_property, longhands_for_shorthand(width_property), value.release_nonnull());
+            border_width = make_single_value_shorthand(width_property, longhands_to_parse_for_shorthand(width_property), value.release_nonnull());
         } else if (property_and_value->property == color_property) {
             VERIFY(!border_color);
-            border_color = make_single_value_shorthand(color_property, longhands_for_shorthand(color_property), value.release_nonnull());
+            border_color = make_single_value_shorthand(color_property, longhands_to_parse_for_shorthand(color_property), value.release_nonnull());
         } else if (property_and_value->property == style_property) {
             VERIFY(!border_style);
-            border_style = make_single_value_shorthand(style_property, longhands_for_shorthand(style_property), value.release_nonnull());
+            border_style = make_single_value_shorthand(style_property, longhands_to_parse_for_shorthand(style_property), value.release_nonnull());
         } else {
             VERIFY_NOT_REACHED();
         }

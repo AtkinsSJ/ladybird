@@ -2,8 +2,9 @@ Harness status: OK
 
 Found 4 tests
 
-4 Pass
-Pass	Keywords should appear in serialization of font and fontStretch
-Pass	Percentages which can be transformed into keywords should be for serialization of font, but not of fontStretch
+1 Pass
+3 Fail
+Fail	Keywords should appear in serialization of font and fontStretch
+Fail	Percentages which can be transformed into keywords should be for serialization of font, but not of fontStretch
 Pass	Percentages which cannot be transformed into keywords should prevent the font shorthand from serializing, but not fontStretch
-Pass	calc() transformation into keywords
+Fail	calc() transformation into keywords
