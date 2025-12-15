@@ -464,19 +464,48 @@ void DisplayListPlayerSkia::paint_linear_gradient(PaintLinearGradient const& com
     surface().canvas().drawRect(to_skia_rect(rect), paint);
 }
 
+// https://drafts.csswg.org/css-backgrounds/#adjusted-radius-dimension
+static double compute_adjusted_radius_dimension(double coverage, double radius, double outset)
+{
+    // 1. If radius is greater than spread, or if coverage is greater than 1, then return radius + outset.
+    // FIXME: What is `spread`? Spec issue: https://github.com/w3c/csswg-drafts/issues/13318
+    if (coverage > 1)
+        return radius + outset;
+
+    // 2. Let ratio be radius / outset.
+    auto ratio = radius / outset;
+
+    // 3. Return radius + outset * (1 - (1 - ratio)3 * (1 - coverage3)).
+    return radius + outset * (1 - pow(1 - ratio, 3) * (1 - pow(coverage, 3)));
+}
+
+// https://drafts.csswg.org/css-backgrounds/#outset-adjusted-border-radius
+static Gfx::FloatSize compute_outset_adjusted_border_radius(Gfx::FloatSize edge, Gfx::FloatSize radius, Gfx::FloatSize outset)
+{
+    // 1. Let coverage be 2 * min(radius’s width / edge’s width, radius’s height / edge’s height).
+    auto coverage = 2 * min(radius.width() / edge.width(), radius.height() / edge.height());
+
+    // 2. Let adustedRadiusWidth be the adjusted radius dimension given coverage, radius’s width, and outset’s width.
+    auto adjusted_radius_width = compute_adjusted_radius_dimension(coverage, radius.width(), outset.width());
+
+    // 3. Let adustedRadiusHeight be the adjusted radius dimension given coverage, radius’s height, and outset’s height.
+    auto adjusted_radius_height = compute_adjusted_radius_dimension(coverage, radius.height(), outset.height());
+
+    // 4. Return (adustedRadiusWidth, adustedRadiusHeight).
+    return { adjusted_radius_width, adjusted_radius_height };
+}
+
 static void add_spread_distance_to_border_radius(int& border_radius, int spread_distance)
 {
     if (border_radius == 0 || spread_distance == 0)
         return;
 
     // https://drafts.csswg.org/css-backgrounds/#shadow-shape
-    // To preserve the box’s shape when spread is applied, the corner radii of the shadow are also increased (decreased,
-    // for inner shadows) from the border-box (padding-box) radii by adding (subtracting) the spread distance (and flooring
-    // at zero). However, in order to create a sharper corner when the border radius is small (and thus ensure continuity
-    // between round and sharp corners), when the border radius is less than the spread distance (or in the case of an inner
-    // shadow, less than the absolute value of a negative spread distance), the spread distance is first multiplied by the
-    // proportion 1 + (r-1)^3, where r is the ratio of the border radius to the spread distance, in calculating the corner
-    // radii of the spread shadow shape.
+    // To preserve the box’s shape when spread is applied, the corner radii of the shadow are also increased
+    // (decreased, for inner shadows) from the border-box (padding-box) radii by adding (subtracting) the spread
+    // distance (and flooring at zero). For outer shadows, the border radius is then adjusted, independently in each
+    // dimension, to preserve the sharpness of rounded corners.
+    border_radius = compute_outset_adjusted_border_radius(border_radius);
     if (border_radius > AK::abs(spread_distance)) {
         border_radius += spread_distance;
     } else {
