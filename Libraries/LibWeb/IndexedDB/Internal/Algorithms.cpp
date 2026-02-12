@@ -8,6 +8,7 @@
 #include <AK/Math.h>
 #include <AK/NumericLimits.h>
 #include <AK/QuickSort.h>
+#include <LibGC/HeapVector.h>
 #include <LibJS/Runtime/AbstractOperations.h>
 #include <LibJS/Runtime/Array.h>
 #include <LibJS/Runtime/ArrayBuffer.h>
@@ -325,7 +326,7 @@ WebIDL::ExceptionOr<GC::Ref<Key>> convert_a_value_to_a_key(JS::Realm& realm, JS:
         seen.append(input);
 
         // 3. Let keys be a new empty list.
-        Vector<GC::Root<Key>> keys;
+        auto keys = realm.heap().allocate<GC::HeapVector<GC::Ref<Key>>>();
 
         // 4. Let index be 0.
         u64 index = 0;
@@ -351,7 +352,7 @@ WebIDL::ExceptionOr<GC::Ref<Key>> convert_a_value_to_a_key(JS::Realm& realm, JS:
                 return key;
 
             // 7. Append key to keys.
-            keys.append(key);
+            keys->elements().append(key);
 
             // 8. Increase index by 1.
             index++;
@@ -712,7 +713,8 @@ JS::Value convert_a_key_to_a_value(JS::Realm& realm, GC::Ref<Key> key)
     }
 
     case Key::KeyType::Array: {
-        auto data = key->value_as_vector();
+        auto vector_value = key->value_as_vector();
+        auto& data = vector_value->elements();
 
         // 1. Let array be the result of executing the ECMAScript Array constructor with no arguments.
         // 2. Assert: array is not an abrupt completion.
@@ -882,7 +884,7 @@ WebIDL::ExceptionOr<GC::Ref<Key>> convert_a_value_to_a_multi_entry_key(JS::Realm
         Vector<JS::Value> seen { value };
 
         // 3. Let keys be a new empty list.
-        Vector<GC::Root<Key>> keys;
+        auto keys = realm.heap().allocate<GC::HeapVector<GC::Ref<Key>>>();
 
         // 4. Let index be 0.
         u64 index = 0;
@@ -903,8 +905,8 @@ WebIDL::ExceptionOr<GC::Ref<Key>> convert_a_value_to_a_multi_entry_key(JS::Realm
                 if (!completion_key.is_error()) {
                     auto key = completion_key.release_value();
 
-                    if (!key->is_invalid() && !keys.contains_slow(key))
-                        keys.append(key);
+                    if (!key->is_invalid() && !keys->elements().contains_slow(key))
+                        keys->elements().append(key);
                 }
             }
 
@@ -1465,7 +1467,7 @@ WebIDL::ExceptionOr<GC::Ptr<Key>> store_a_record_into_an_object_store(JS::Realm&
         //    then this operation failed with a "ConstraintError" DOMException.
         //    Abort this algorithm without taking any further steps.
         if (index_multi_entry && index_key_is_array && index_is_unique) {
-            for (auto const& subkey : index_key->subkeys()) {
+            for (auto const& subkey : index_key->subkeys()->elements()) {
                 if (index->has_record_with_key(*subkey))
                     return WebIDL::ConstraintError::create(realm, "Record already exists in index"_utf16);
             }
@@ -1486,7 +1488,7 @@ WebIDL::ExceptionOr<GC::Ptr<Key>> store_a_record_into_an_object_store(JS::Realm&
         // 6. If index’s multiEntry flag is true and index key is an array key,
         //    then for each subkey of the subkeys of index key store a record in index containing subkey as its key and key as its value.
         if (index_multi_entry && index_key_is_array) {
-            for (auto const& subkey : index_key->subkeys()) {
+            for (auto const& subkey : index_key->subkeys()->elements()) {
                 IndexRecord index_record = {
                     .key = *subkey,
                     .value = *key,
