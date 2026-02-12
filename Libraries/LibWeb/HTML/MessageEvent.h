@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2021, Dex♪ <dexes.ttp@gmail.com>
  * Copyright (c) 2022, Andreas Kling <andreas@ladybird.org>
+ * Copyright (c) 2026, Sam Atkins <sam@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -15,6 +16,7 @@ namespace Web::HTML {
 
 // FIXME: Include ServiceWorker
 using MessageEventSource = Variant<GC::Root<WindowProxy>, GC::Root<MessagePort>>;
+using MessageEventSourceInternal = Variant<Empty, GC::Ref<WindowProxy>, GC::Ref<MessagePort>>;
 
 struct MessageEventInit : public DOM::EventInit {
     JS::Value data { JS::js_null() };
@@ -39,7 +41,9 @@ public:
     String const& origin() const { return m_origin; }
     String const& last_event_id() const { return m_last_event_id; }
     GC::Ref<JS::Object> ports() const;
-    Variant<GC::Root<WindowProxy>, GC::Root<MessagePort>, Empty> source() const;
+
+    using SourceResult = Variant<Empty, GC::Root<WindowProxy>, GC::Root<MessagePort>>;
+    SourceResult source() const;
 
     virtual Optional<URL::Origin> extract_an_origin() const override;
 
@@ -52,7 +56,7 @@ private:
     JS::Value m_data;
     String m_origin;
     String m_last_event_id;
-    Optional<MessageEventSource> m_source;
+    MessageEventSourceInternal m_source;
     Vector<GC::Ref<JS::Object>> m_ports;
     mutable GC::Ptr<JS::Array> m_ports_array;
 };
