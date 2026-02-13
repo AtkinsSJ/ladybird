@@ -549,7 +549,7 @@ GC::Ref<WebIDL::Promise> FontFace::load()
         // 4. Using the value of font face’s [[Urls]] slot, attempt to load a font as defined in [CSS-FONTS-3],
         //     as if it was the value of a @font-face rule’s src descriptor.
 
-        // 5. When the load operation completes, successfully or not, queue a task to run the follsowing steps synchronously:
+        // 5. When the load operation completes, successfully or not, queue a task to run the following steps synchronously:
         auto on_load = GC::create_function(heap(), [this](RefPtr<Gfx::Typeface const> maybe_typeface) {
             HTML::queue_global_task(HTML::Task::Source::FontLoading, HTML::relevant_global_object(*this), GC::create_function(heap(), [this, maybe_typeface] {
                 HTML::TemporaryExecutionContext context(realm(), HTML::TemporaryExecutionContext::CallbacksEnabled::Yes);

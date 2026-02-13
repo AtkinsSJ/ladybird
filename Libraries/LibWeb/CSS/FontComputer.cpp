@@ -168,6 +168,18 @@ void FontLoader::start_loading_next_url()
     if (m_urls.is_empty())
         return;
 
+    m_rule_or_declaration.value.visit(
+        [&](RuleOrDeclaration::Rule const&) {
+            // Not connected to a CSSFontFaceRule, so there's nothing to report.
+            dbgln("Loading next font url but we've not got a @font-face");
+        },
+        [&](RuleOrDeclaration::StyleDeclaration const& style_declaration) {
+            if (auto* font_face_rule = as_if<CSSFontFaceRule>(style_declaration.parent_rule.ptr()))
+                font_face_rule->set_loading_state(CSSStyleSheet::LoadingState::Loading);
+            else
+                dbgln("Loading next font url but our CSSRule is weird");
+        });
+
     // https://drafts.csswg.org/css-fonts-4/#fetch-a-font
     // To fetch a font given a selected <url> url for @font-face rule, fetch url, with ruleOrDeclaration being rule,
     // destination "font", CORS mode "cors", and processResponse being the following steps given response res and null,
@@ -212,6 +224,20 @@ void FontLoader::font_did_load_or_fail(RefPtr<Gfx::Typeface const> typeface)
         if (m_on_load)
             m_on_load->function()(nullptr);
     }
+
+    m_rule_or_declaration.value.visit(
+        [&](RuleOrDeclaration::Rule const&) {
+            // Not connected to a CSSFontFaceRule, so there's nothing to report.
+            dbgln("Finished loading font but we've not got a @font-face");
+        },
+        [&](RuleOrDeclaration::StyleDeclaration const& style_declaration) {
+            // FIXME: If the fetch succeeds but the file isn't valid, is that a "load" or "error"?
+            if (auto* font_face_rule = as_if<CSSFontFaceRule>(style_declaration.parent_rule.ptr()))
+                font_face_rule->set_loading_state(typeface ? CSSStyleSheet::LoadingState::Loaded : CSSStyleSheet::LoadingState::Error);
+            else
+                dbgln("Finished loading font but our CSSRule is weird");
+        });
+
     m_fetch_controller = nullptr;
 }
 
@@ -640,6 +666,8 @@ GC::Ptr<FontLoader> FontComputer::load_font_face(ParsedFontFace const& font_face
 
     RuleOrDeclaration rule_or_declaration {
         .environment_settings_object = document().relevant_settings_object(),
+
+        // FIXME: Rearrange this to put the rule in there!
         .value = RuleOrDeclaration::Rule {
             .parent_style_sheet = font_face.parent_rule()->parent_style_sheet(),
         }
