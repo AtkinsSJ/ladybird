@@ -282,6 +282,47 @@ class AKOptionalPrinter(GenericPrinter):
             return f"<error: {e}>"
 
 
+class AKVariantPrinter(GenericPrinter):
+    """Pretty-printer for AK::Variant"""
+
+    def __init__(self, val):
+        super().__init__(val)
+        self.index = int(self.val["m_index"])
+
+        self.contained_types = []
+        type_resolved = self.val.type.strip_typedefs()
+        index = 0
+        while True:
+            try:
+                self.contained_types.append(type_resolved.template_argument(index))
+                index += 1
+            except RuntimeError:
+                break
+
+    def _contained_value(self):
+        data = self.val["m_data"]
+        value_type = self.contained_types[self.index]
+        return data.cast(value_type.pointer()).referenced_value()
+
+    def to_string(self):
+        try:
+            return self._contained_value().format_string()
+        except gdb.MemoryError:
+            return "<invalid memory>"
+        except Exception as e:
+            return f"<error: {e}>"
+
+    def children(self):
+        try:
+            for child in super().yield_children(ignored_fields=[]):
+                yield child
+            yield "value", self._contained_value()
+        except gdb.MemoryError:
+            yield "<error>", "invalid memory"
+        except Exception as e:
+            yield "<error>", str(e)
+
+
 def build_pretty_printer():
     pp = gdb.printing.RegexpCollectionPrettyPrinter("AK")
     pp.add_printer("AK::String", "^AK::String$", AKStringPrinter)
@@ -290,6 +331,7 @@ def build_pretty_printer():
     pp.add_printer("AK::StringView", "^AK::StringView$", AKStringViewPrinter)
     pp.add_printer("AK::FlyString", "^AK::FlyString$", AKFlyStringPrinter)
     pp.add_printer("AK::Optional", "^AK::Optional<.*>$", AKOptionalPrinter)
+    pp.add_printer("AK::Variant", "^AK::Variant<.*>$", AKVariantPrinter)
     return pp
 
 

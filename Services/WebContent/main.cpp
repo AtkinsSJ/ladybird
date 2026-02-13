@@ -227,6 +227,33 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments)
             dbgln("Failed to reinitialize image decoder: {}", result.error());
     };
 
+    // FIXME: Find a better way to format a decimal with trimmed trailing zeroes
+    StringBuilder builder;
+    auto resolved_string = MUST(String::formatted("{:.2}", 333.555f));
+    if (resolved_string.contains('.'))
+        resolved_string = MUST(resolved_string.trim("0"sv, TrimMode::Right));
+    auto other_string = "This string is longer\n so that I can look at it properly."_string;
+    auto substring = other_string.substring_from_byte_offset_with_shared_superstring(5).release_value();
+    builder.append(substring);
+    auto view = resolved_string.bytes_as_string_view();
+    if (view.contains('0')) {
+        builder.append("lol"sv);
+    }
+    auto fly = "wheeeee"_fly_string;
+    builder.append(fly);
+    builder.append(resolved_string);
+
+    Optional<int> foo;
+    Optional<int> bar = 72;
+
+    using CoolVariant = Variant<Empty, int, String>;
+    CoolVariant va = {};
+    CoolVariant vb = 37;
+    CoolVariant vc = "Hello"_string;
+
+    if (foo.has_value())
+        builder.append(bar.value());
+
     return event_loop.exec();
 }
 
