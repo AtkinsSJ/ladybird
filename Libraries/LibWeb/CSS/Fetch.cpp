@@ -28,7 +28,10 @@ static StyleSheetAndURL style_resource_base_url(RuleOrDeclaration css_rule_or_de
     // 2. If cssRuleOrDeclaration is a CSS declaration block whose parent CSS rule is not null, set cssRuleOrDeclaration to cssRuleOrDeclaration’s parent CSS rule.
     if (auto* block = css_rule_or_declaration.value.get_pointer<RuleOrDeclaration::StyleDeclaration>()) {
         if (block->parent_rule)
-            css_rule_or_declaration.value = RuleOrDeclaration::Rule { block->parent_rule->parent_style_sheet() };
+            css_rule_or_declaration.value = RuleOrDeclaration::Rule {
+                .rule = block->parent_rule,
+                .parent_style_sheet = block->parent_rule->parent_style_sheet(),
+            };
     }
 
     // 3. If cssRuleOrDeclaration is a CSS rule, set sheet to cssRuleOrDeclaration’s parent style sheet.

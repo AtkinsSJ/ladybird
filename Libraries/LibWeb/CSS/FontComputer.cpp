@@ -133,10 +133,14 @@ void FontLoader::visit_edges(Visitor& visitor)
 {
     Base::visit_edges(visitor);
     visitor.visit(m_font_computer);
-    if (auto* rule = m_rule_or_declaration.value.get_pointer<RuleOrDeclaration::Rule>())
-        visitor.visit(rule->parent_style_sheet);
-    else if (auto* block = m_rule_or_declaration.value.get_pointer<RuleOrDeclaration::StyleDeclaration>())
-        visitor.visit(block->parent_rule);
+    m_rule_or_declaration.value.visit(
+        [&visitor](RuleOrDeclaration::Rule const& rule) {
+            visitor.visit(rule.rule);
+            visitor.visit(rule.parent_style_sheet);
+        },
+        [&visitor](RuleOrDeclaration::StyleDeclaration const& style_declaration) {
+            visitor.visit(style_declaration.parent_rule);
+        });
     visitor.visit(m_fetch_controller);
     visitor.visit(m_on_load);
 }
@@ -632,6 +636,7 @@ GC::Ptr<FontLoader> FontComputer::load_font_face(ParsedFontFace const& font_face
     RuleOrDeclaration rule_or_declaration {
         .environment_settings_object = document().relevant_settings_object(),
         .value = RuleOrDeclaration::Rule {
+            .rule = font_face.parent_rule(),
             .parent_style_sheet = font_face.parent_rule()->parent_style_sheet(),
         }
     };

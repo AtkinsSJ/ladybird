@@ -61,6 +61,7 @@ void ImageStyleValue::load_any_resources(DOM::Document& document)
     RuleOrDeclaration rule_or_declaration {
         .environment_settings_object = document.relevant_settings_object(),
         .value = RuleOrDeclaration::Rule {
+            .rule = nullptr,
             .parent_style_sheet = m_style_sheet,
         }
     };

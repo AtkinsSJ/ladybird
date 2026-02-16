@@ -146,6 +146,7 @@ void CSSImportRule::fetch()
     RuleOrDeclaration rule_or_declaration {
         .environment_settings_object = HTML::relevant_settings_object(parent_style_sheet),
         .value = RuleOrDeclaration::Rule {
+            .rule = this,
             .parent_style_sheet = &parent_style_sheet,
         }
     };

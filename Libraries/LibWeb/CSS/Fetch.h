@@ -30,6 +30,7 @@ struct RuleOrDeclaration {
     };
 
     struct Rule {
+        GC::Ptr<CSSRule> rule;
         GC::Ptr<CSSStyleSheet> parent_style_sheet;
     };
 
