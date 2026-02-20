@@ -586,6 +586,7 @@ void FontFace::set_line_gap_override_impl(NonnullRefPtr<StyleValue const> const&
 // https://drafts.csswg.org/css-font-loading/#dom-fontface-load
 GC::Ref<WebIDL::Promise> FontFace::load()
 {
+    dbgln("Trying to load {}", family());
     //  1. Let font face be the FontFace object on which this method was called.
     auto& font_face = *this;
 
@@ -597,6 +598,8 @@ GC::Ref<WebIDL::Promise> FontFace::load()
     // 3. Otherwise, set font face’s status attribute to "loading", return font face’s [[FontStatusPromise]],
     //    and continue executing the rest of this algorithm asynchronously.
     m_status = Bindings::FontFaceLoadStatus::Loading;
+    if (m_css_font_face_rule)
+        m_css_font_face_rule->set_loading_state(CSSStyleSheet::LoadingState::Loading);
 
     Web::Platform::EventLoopPlugin::the().deferred_invoke(GC::create_function(heap(), [this] {
         // 4. Using the value of font face’s [[Urls]] slot, attempt to load a font as defined in [CSS-FONTS-3],
@@ -609,7 +612,10 @@ GC::Ref<WebIDL::Promise> FontFace::load()
                 // 1. If the attempt to load fails, reject font face’s [[FontStatusPromise]] with a DOMException whose name
                 //    is "NetworkError" and set font face’s status attribute to "error".
                 if (!maybe_typeface) {
+                    dbgln("Failed to load {}", family());
                     m_status = Bindings::FontFaceLoadStatus::Error;
+                    if (m_css_font_face_rule)
+                        m_css_font_face_rule->set_loading_state(CSSStyleSheet::LoadingState::Error);
                     WebIDL::reject_promise(realm(), m_font_status_promise, WebIDL::NetworkError::create(realm(), "Failed to load font"_utf16));
 
                     // For each FontFaceSet font face is in:
@@ -628,9 +634,12 @@ GC::Ref<WebIDL::Promise> FontFace::load()
                 // 2. Otherwise, font face now represents the loaded font; fulfill font face’s [[FontStatusPromise]] with font face
                 //    and set font face’s status attribute to "loaded".
                 else {
+                    dbgln("Successfully loaded {}", family());
                     m_parsed_font = maybe_typeface;
                     m_status = Bindings::FontFaceLoadStatus::Loaded;
                     WebIDL::resolve_promise(realm(), m_font_status_promise, this);
+                    if (m_css_font_face_rule)
+                        m_css_font_face_rule->set_loading_state(CSSStyleSheet::LoadingState::Loaded);
 
                     // For each FontFaceSet font face is in:
                     for (auto& font_face_set : m_containing_sets) {
