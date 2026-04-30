@@ -15,6 +15,11 @@ namespace Web::ServiceWorker {
 //        Does this need to be serialized to disk as well?
 static HashMap<RegistrationKey, Registration> s_registrations;
 
+HashMap<RegistrationKey, Registration> const& Registration::map()
+{
+    return s_registrations;
+}
+
 Registration::Registration(StorageAPI::StorageKey storage_key, URL::URL scope, Bindings::ServiceWorkerUpdateViaCache update_via_cache)
     : m_storage_key(move(storage_key))
     , m_scope_url(move(scope))

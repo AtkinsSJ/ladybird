@@ -16,6 +16,8 @@
 
 namespace Web::ServiceWorker {
 
+struct RegistrationKey;
+
 // https://w3c.github.io/ServiceWorker/#dfn-service-worker-registration
 // This class corresponds to "service worker registration", not "ServiceWorkerRegistration"
 // FIXME: This object needs to live at the user-agent level, in LibWebView, not in LibWeb
@@ -35,6 +37,8 @@ public:
     static Optional<Registration&> match(StorageAPI::StorageKey const&, URL::URL const&);
 
     static void remove(StorageAPI::StorageKey const&, URL::URL const&);
+
+    static HashMap<RegistrationKey, Registration> const& map();
 
     bool is_unregistered();
 
