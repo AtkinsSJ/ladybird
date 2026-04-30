@@ -1,0 +1,11 @@
+Harness status: OK
+
+Found 6 tests
+
+6 Fail
+Fail	registrations are not returned following unregister
+Fail	Register then getRegistrations
+Fail	Register multiple times then getRegistrations
+Fail	Register then Unregister then getRegistrations
+Fail	Register then Unregister with controlled frame then getRegistrations
+Fail	getRegistrations promise resolves only with same origin registrations.
