@@ -213,10 +213,16 @@ static void update(JS::VM& vm, GC::Ref<Job> job)
     // - Soft-Update has no client
 
     // To perform the fetch hook given request, run the following steps:
-    auto perform_the_fetch_hook_function = [&registration = *registration, job, newest_worker, state](GC::Ref<Fetch::Infrastructure::Request> request, HTML::TopLevelModule top_level, Fetch::Infrastructure::FetchAlgorithms::ProcessResponseConsumeBodyFunction process_custom_fetch_response) -> WebIDL::ExceptionOr<void> {
+    auto perform_the_fetch_hook_function = [job, newest_worker, state](GC::Ref<Fetch::Infrastructure::Request> request, HTML::TopLevelModule top_level, Fetch::Infrastructure::FetchAlgorithms::ProcessResponseConsumeBodyFunction process_custom_fetch_response) -> WebIDL::ExceptionOr<void> {
         // FIXME: Soft-Update has no client
         auto& realm = job->client->realm();
         auto& vm = realm.vm();
+
+        // AD-HOC: Get the registration again, and stop if it's not valid.
+        auto maybe_registration = Registration::get(job->storage_key, job->scope_url);
+        if (!maybe_registration.has_value())
+            return WebIDL::AbortError::create(realm, "Service Worker fetch was cancelled due to missing registration."_utf16);
+        auto& registration = maybe_registration.value();
 
         // 1. Append `Service-Worker`/`script` to request’s header list.
         // Note: See https://w3c.github.io/ServiceWorker/#service-worker
@@ -256,7 +262,16 @@ static void update(JS::VM& vm, GC::Ref<Job> job)
         //        Is this actually what the spec wants us to do?
         IGNORE_USE_IN_ESCAPING_LAMBDA auto process_response_completion_result = Optional<WebIDL::ExceptionOr<void>> {};
 
-        fetch_algorithms_input.process_response = [request, job, state, newest_worker, &realm, &registration, &process_response_completion_result](GC::Ref<Fetch::Infrastructure::Response> response) mutable -> void {
+        fetch_algorithms_input.process_response = [request, job, state, newest_worker, &realm, &process_response_completion_result](GC::Ref<Fetch::Infrastructure::Response> response) mutable -> void {
+            // AD-HOC: Get the registration again, and stop if it's not valid.
+            auto maybe_registration = Registration::get(job->storage_key, job->scope_url);
+            if (!maybe_registration.has_value()) {
+                reject_job_promise<JS::TypeError>(job, "Service Worker registration is missing when processing response"_utf16);
+                process_response_completion_result = WebIDL::NetworkError::create(realm, "Service Worker registration is missing when processing response"_utf16);
+                return;
+            }
+            auto& registration = maybe_registration.value();
+
             // 7. Extract a MIME type from the response’s header list. If s MIME type (ignoring parameters) is not a JavaScript MIME type, then:
             auto mime_type = Fetch::Infrastructure::extract_mime_type(response->header_list());
             if (!mime_type.has_value() || !mime_type->is_javascript()) {
@@ -399,7 +414,16 @@ static void update(JS::VM& vm, GC::Ref<Job> job)
     auto perform_the_fetch_hook = HTML::create_perform_the_fetch_hook(vm.heap(), move(perform_the_fetch_hook_function));
 
     // When the algorithm asynchronously completes, continue the rest of these steps, with script being the asynchronous completion value.
-    auto on_fetch_complete = HTML::create_on_fetch_script_complete(vm.heap(), [job, newest_worker, state, &registration = *registration, &vm](GC::Ptr<HTML::Script> script) -> void {
+    auto on_fetch_complete = HTML::create_on_fetch_script_complete(vm.heap(), [job, newest_worker, state, &vm](GC::Ptr<HTML::Script> script) -> void {
+        // AD-HOC: Get the registration again, and stop if it's not valid.
+        auto maybe_registration = Registration::get(job->storage_key, job->scope_url);
+        if (!maybe_registration.has_value()) {
+            reject_job_promise<JS::TypeError>(job, "Service Worker registration is missing after fetch"_utf16);
+            finish_job(vm, job);
+            return;
+        }
+        auto& registration = maybe_registration.value();
+
         // 8. If script is null or Is Async Module with script’s record, script’s base URL, and « » is true, then:
         // FIXME: Reject async modules
         if (!script) {
