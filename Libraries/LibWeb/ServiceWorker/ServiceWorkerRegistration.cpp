@@ -7,8 +7,10 @@
 #include <LibJS/Runtime/Realm.h>
 #include <LibWeb/Bindings/Intrinsics.h>
 #include <LibWeb/Bindings/ServiceWorkerRegistration.h>
+#include <LibWeb/ServiceWorker/Job.h>
 #include <LibWeb/ServiceWorker/ServiceWorker.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerRegistration.h>
+#include <LibWeb/WebIDL/Promise.h>
 
 namespace Web::ServiceWorker {
 
@@ -37,6 +39,28 @@ void ServiceWorkerRegistration::visit_edges(Cell::Visitor& visitor)
 GC::Ref<ServiceWorkerRegistration> ServiceWorkerRegistration::create(JS::Realm& realm, Registration const& registration)
 {
     return realm.create<ServiceWorkerRegistration>(realm, registration);
+}
+
+// https://w3c.github.io/ServiceWorker/#navigator-service-worker-unregister
+GC::Ref<WebIDL::Promise> ServiceWorkerRegistration::unregister()
+{
+    auto& realm = this->realm();
+
+    // 1. Let registration be the service worker registration.
+    auto& registration = this->registration();
+
+    // 2. Let promise be a new promise.
+    auto promise = WebIDL::create_promise(realm);
+
+    // 3. Let job be the result of running Create Job with unregister, registration’s storage key, registration’s scope
+    //    url, null, promise, and this’s relevant settings object.
+    auto job = Job::create(vm(), Job::Type::Unregister, registration.storage_key(), registration.scope_url(), {}, promise, HTML::relevant_settings_object(*this));
+
+    // 4. Invoke Schedule Job with job.
+    schedule_job(vm(), job);
+
+    // 5. Return promise.
+    return promise;
 }
 
 }

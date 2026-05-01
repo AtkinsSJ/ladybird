@@ -35,6 +35,8 @@ public:
     // https://w3c.github.io/ServiceWorker/#dom-serviceworkerregistration-updateviacache
     Bindings::ServiceWorkerUpdateViaCache update_via_cache() const { return m_registration.update_via_cache(); }
 
+    GC::Ref<WebIDL::Promise> unregister();
+
     explicit ServiceWorkerRegistration(JS::Realm&, Registration const&);
     virtual ~ServiceWorkerRegistration() override = default;
 
