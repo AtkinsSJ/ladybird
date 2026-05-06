@@ -5,6 +5,7 @@
  */
 
 #include <LibWebView/Application.h>
+#include <LibWebView/HistoryStore.h>
 
 #import <Application/ApplicationDelegate.h>
 #import <Interface/InfoBar.h>
@@ -24,6 +25,7 @@
 @property (nonatomic, weak) Tab* active_tab;
 
 @property (nonatomic, strong) NSMenu* bookmarks_menu;
+@property (nonatomic, strong) NSMenuItem* reopen_recently_closed_tab_item;
 
 @property (nonatomic, strong) InfoBar* info_bar;
 
@@ -239,6 +241,11 @@
     WebView::Application::the().clear_history();
 }
 
+- (void)updateReopenRecentlyClosedTabMenuItemEnabledState
+{
+    [self.reopen_recently_closed_tab_item setEnabled:WebView::Application::history_store().has_recently_closed_tabs()];
+}
+
 - (NSMenuItem*)createApplicationMenu
 {
     auto* menu = [[NSMenuItem alloc] init];
@@ -375,6 +382,11 @@
     [submenu setAutoenablesItems:NO];
 
     [submenu addItem:Ladybird::create_application_menu_item(WebView::Application::the().reload_action())];
+    self.reopen_recently_closed_tab_item = [[NSMenuItem alloc] initWithTitle:@"Reopen Recently Closed Tab"
+                                                                      action:@selector(reopenRecentlyClosedTab:)
+                                                               keyEquivalent:@"T"];
+    [self updateReopenRecentlyClosedTabMenuItemEnabledState];
+    [submenu addItem:self.reopen_recently_closed_tab_item];
     [submenu addItem:[NSMenuItem separatorItem]];
 
     [submenu addItem:[[NSMenuItem alloc] initWithTitle:@"Clear History"

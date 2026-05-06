@@ -39,6 +39,7 @@
 
 - (void)rebuildBookmarksMenu;
 - (void)updateBookmarksBarDisplay:(bool)show_bookmarks_bar;
+- (void)updateReopenRecentlyClosedTabMenuItemEnabledState;
 
 - (void)onDevtoolsEnabled;
 - (void)onDevtoolsDisabled;
