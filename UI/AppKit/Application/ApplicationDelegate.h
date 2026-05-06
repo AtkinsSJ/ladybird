@@ -8,6 +8,7 @@
 
 #include <AK/Optional.h>
 #include <AK/StringView.h>
+#include <AK/Vector.h>
 #include <LibURL/URL.h>
 #include <LibWeb/HTML/ActivateTab.h>
 
@@ -35,11 +36,15 @@
 - (void)setActiveTab:(nonnull Tab*)tab;
 - (nullable Tab*)activeTab;
 
+- (void)noteCloseRequestedForTabController:(nonnull TabController*)controller;
+- (void)recordClosingTabController:(nonnull TabController*)controller;
+- (void)openNewWindowWithURLs:(Vector<URL::URL> const&)urls
+               activeTabIndex:(size_t)active_tab_index;
 - (void)removeTab:(nonnull TabController*)controller;
 
 - (void)rebuildBookmarksMenu;
 - (void)updateBookmarksBarDisplay:(bool)show_bookmarks_bar;
-- (void)updateReopenRecentlyClosedTabMenuItemEnabledState;
+- (void)updateReopenRecentlyClosedMenuItem;
 
 - (void)onDevtoolsEnabled;
 - (void)onDevtoolsDisabled;

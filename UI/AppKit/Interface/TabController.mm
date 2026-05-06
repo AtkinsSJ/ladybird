@@ -231,7 +231,6 @@ static NSInteger autocomplete_suggestion_index(NSString* suggestion_text, Vector
 - (void)restoreLocationFieldQuery;
 - (void)openTabInCurrentTabGroup:(URL::URL const&)url
                      activateTab:(Web::HTML::ActivateTab)activate_tab;
-- (void)updateReopenRecentlyClosedTabMenuItemEnabledState;
 
 @end
 
@@ -386,14 +385,23 @@ static NSInteger autocomplete_suggestion_index(NSString* suggestion_text, Vector
 
 - (void)reopenRecentlyClosedTab:(id)sender
 {
-    auto recently_closed_url = WebView::Application::history_store().pop_most_recently_closed_tab();
-    [self updateReopenRecentlyClosedTabMenuItemEnabledState];
+    auto recently_closed_entry = WebView::Application::history_store().pop_most_recently_closed_entry();
+    auto* delegate = (ApplicationDelegate*)[NSApp delegate];
+    [delegate updateReopenRecentlyClosedMenuItem];
 
-    if (!recently_closed_url.has_value())
+    if (!recently_closed_entry.has_value())
         return;
 
-    [self openTabInCurrentTabGroup:recently_closed_url.release_value()
-                       activateTab:Web::HTML::ActivateTab::Yes];
+    if (recently_closed_entry->was_window) {
+        [delegate openNewWindowWithURLs:recently_closed_entry->urls
+                         activeTabIndex:recently_closed_entry->active_tab_index];
+        return;
+    }
+
+    if (!recently_closed_entry->urls.is_empty()) {
+        [self openTabInCurrentTabGroup:recently_closed_entry->urls[0]
+                           activateTab:Web::HTML::ActivateTab::Yes];
+    }
 }
 
 - (void)openTabInCurrentTabGroup:(URL::URL const&)url
@@ -408,28 +416,6 @@ static NSInteger autocomplete_suggestion_index(NSString* suggestion_text, Vector
                activateTab:activate_tab];
 
     self.tab.titlebarAppearsTransparent = YES;
-}
-
-- (void)updateReopenRecentlyClosedTabMenuItemEnabledState
-{
-    NSMenu* history_menu = nil;
-    for (NSMenuItem* menu_item in [[NSApp mainMenu] itemArray]) {
-        if ([[[menu_item submenu] title] isEqualToString:@"History"]) {
-            history_menu = [menu_item submenu];
-            break;
-        }
-    }
-
-    NSMenuItem* reopen_recently_closed_tab_item = nil;
-    for (NSMenuItem* menu_item in [history_menu itemArray]) {
-        if (menu_item.action == @selector(reopenRecentlyClosedTab:)) {
-            reopen_recently_closed_tab_item = menu_item;
-            break;
-        }
-    }
-
-    if (reopen_recently_closed_tab_item != nil)
-        [reopen_recently_closed_tab_item setEnabled:WebView::Application::history_store().has_recently_closed_tabs()];
 }
 
 - (void)setLocationFieldText:(StringView)url
@@ -858,6 +844,8 @@ static NSInteger autocomplete_suggestion_index(NSString* suggestion_text, Vector
     // Prevent closing on first request so WebContent can cleanly shutdown (e.g. asking if the user is sure they want
     // to leave, closing WebSocket connections, etc.)
     if (!self.already_requested_close) {
+        auto* delegate = (ApplicationDelegate*)[NSApp delegate];
+        [delegate noteCloseRequestedForTabController:self];
         self.already_requested_close = true;
         [[[self tab] web_view] requestClose];
         return false;
@@ -870,10 +858,8 @@ static NSInteger autocomplete_suggestion_index(NSString* suggestion_text, Vector
 
 - (void)windowWillClose:(NSNotification*)notification
 {
-    WebView::Application::history_store().record_closed_tab([[[self tab] web_view] view].url());
-    [self updateReopenRecentlyClosedTabMenuItemEnabledState];
-
     auto* delegate = (ApplicationDelegate*)[NSApp delegate];
+    [delegate recordClosingTabController:self];
     [delegate removeTab:self];
 }
 
@@ -1107,7 +1093,7 @@ static NSInteger autocomplete_suggestion_index(NSString* suggestion_text, Vector
 - (BOOL)validateMenuItem:(NSMenuItem*)menu_item
 {
     if (menu_item.action == @selector(reopenRecentlyClosedTab:))
-        return WebView::Application::history_store().has_recently_closed_tabs();
+        return WebView::Application::history_store().has_recently_closed_entries();
 
     return YES;
 }

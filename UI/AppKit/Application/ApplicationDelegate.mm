@@ -4,8 +4,11 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/HashMap.h>
+#include <AK/Vector.h>
 #include <LibWebView/Application.h>
 #include <LibWebView/HistoryStore.h>
+#include <LibWebView/ViewImplementation.h>
 
 #import <Application/ApplicationDelegate.h>
 #import <Interface/InfoBar.h>
@@ -18,6 +21,59 @@
 #if !__has_feature(objc_arc)
 #    error "This project requires ARC"
 #endif
+
+static NSString* const REOPEN_RECENTLY_CLOSED_TAB_MENU_ITEM_TITLE = @"Reopen Recently Closed Tab";
+static NSString* const REOPEN_RECENTLY_CLOSED_WINDOW_MENU_ITEM_TITLE = @"Reopen Recently Closed Window";
+
+struct RecentlyClosedTabGroupSnapshot {
+    Vector<URL::URL> urls;
+    size_t active_tab_index { 0 };
+};
+
+struct PendingRecentlyClosedTabGroup {
+    Vector<URL::URL> urls;
+    Vector<URL::URL> individually_closed_urls;
+    Vector<void*> window_keys;
+    size_t active_tab_index { 0 };
+    size_t expected_close_count { 0 };
+    bool finalization_scheduled { false };
+};
+
+static constexpr int RECENTLY_CLOSED_TAB_GROUP_FINALIZATION_DELAY_MS = 250;
+
+static void* recently_closed_tab_window_key(Tab* tab)
+{
+    return (__bridge void*)tab;
+}
+
+static void* recently_closed_tab_group_key(Tab* tab)
+{
+    if (auto* tab_group = [tab tabGroup]; tab_group != nil)
+        return (__bridge void*)tab_group;
+
+    return (__bridge void*)tab;
+}
+
+static RecentlyClosedTabGroupSnapshot snapshot_recently_closed_tab_group(Tab* tab)
+{
+    auto* tab_group = [tab tabGroup];
+    NSArray<NSWindow*>* windows = tab_group != nil ? [tab_group windows] : @[ (NSWindow*)tab ];
+    NSWindow* selected_window = tab_group != nil ? [tab_group selectedWindow] : tab;
+
+    RecentlyClosedTabGroupSnapshot snapshot;
+    snapshot.urls.ensure_capacity([windows count]);
+
+    for (NSWindow* window in windows) {
+        if (![window isKindOfClass:[Tab class]])
+            continue;
+
+        snapshot.urls.append([[(Tab*)window web_view] view].url());
+        if (window == selected_window)
+            snapshot.active_tab_index = snapshot.urls.size() - 1;
+    }
+
+    return snapshot;
+}
 
 @interface ApplicationDelegate ()
 
@@ -43,6 +99,10 @@
 @end
 
 @implementation ApplicationDelegate
+{
+    HashMap<void*, PendingRecentlyClosedTabGroup> m_pending_recently_closed_tab_groups;
+    HashMap<void*, void*> m_pending_recently_closed_tab_window_group_keys;
+}
 
 - (instancetype)init
 {
@@ -131,6 +191,119 @@
 - (Tab*)activeTab
 {
     return self.active_tab;
+}
+
+- (void)recordClosingTabController:(TabController*)controller
+{
+    auto* tab = (Tab*)[controller window];
+    auto window_key = recently_closed_tab_window_key(tab);
+    if (auto group_key = m_pending_recently_closed_tab_window_group_keys.get(window_key); group_key.has_value()) {
+        auto pending_tab_group_iterator = m_pending_recently_closed_tab_groups.find(*group_key);
+        if (pending_tab_group_iterator != m_pending_recently_closed_tab_groups.end()) {
+            auto* pending_tab_group = &pending_tab_group_iterator->value;
+            pending_tab_group->individually_closed_urls.append([[tab web_view] view].url());
+            if (pending_tab_group->finalization_scheduled)
+                return;
+
+            pending_tab_group->finalization_scheduled = true;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, RECENTLY_CLOSED_TAB_GROUP_FINALIZATION_DELAY_MS * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+                auto pending_tab_group_iterator = m_pending_recently_closed_tab_groups.find(*group_key);
+                if (pending_tab_group_iterator == m_pending_recently_closed_tab_groups.end())
+                    return;
+                auto* pending_tab_group = &pending_tab_group_iterator->value;
+
+                auto finalized_tab_group = move(*pending_tab_group);
+                m_pending_recently_closed_tab_groups.remove(*group_key);
+                for (auto pending_window_key : finalized_tab_group.window_keys)
+                    m_pending_recently_closed_tab_window_group_keys.remove(pending_window_key);
+
+                if (finalized_tab_group.individually_closed_urls.size() == finalized_tab_group.expected_close_count) {
+                    WebView::Application::history_store().record_closed_window(move(finalized_tab_group.urls), finalized_tab_group.active_tab_index);
+                } else {
+                    for (auto& url : finalized_tab_group.individually_closed_urls)
+                        WebView::Application::history_store().record_closed_tab(url);
+                }
+
+                [self updateReopenRecentlyClosedMenuItem];
+            });
+            return;
+        }
+
+        m_pending_recently_closed_tab_window_group_keys.remove(window_key);
+    }
+
+    WebView::Application::history_store().record_closed_tab([[tab web_view] view].url());
+    [self updateReopenRecentlyClosedMenuItem];
+}
+
+- (void)noteCloseRequestedForTabController:(TabController*)controller
+{
+    auto* tab = (Tab*)[controller window];
+    auto* tab_group = [tab tabGroup];
+    if (tab_group == nil)
+        return;
+
+    auto snapshot = snapshot_recently_closed_tab_group(tab);
+    if (snapshot.urls.size() <= 1)
+        return;
+
+    auto group_key = recently_closed_tab_group_key(tab);
+    if (m_pending_recently_closed_tab_groups.contains(group_key))
+        return;
+
+    auto expected_close_count = snapshot.urls.size();
+    PendingRecentlyClosedTabGroup pending_tab_group {
+        .urls = move(snapshot.urls),
+        .active_tab_index = snapshot.active_tab_index,
+        .expected_close_count = expected_close_count,
+    };
+
+    NSArray<NSWindow*>* windows = [tab_group windows];
+    pending_tab_group.window_keys.ensure_capacity([windows count]);
+
+    for (NSWindow* window in windows) {
+        if (![window isKindOfClass:[Tab class]])
+            continue;
+
+        auto pending_window_key = recently_closed_tab_window_key((Tab*)window);
+        pending_tab_group.window_keys.append(pending_window_key);
+        m_pending_recently_closed_tab_window_group_keys.set(pending_window_key, group_key);
+    }
+
+    m_pending_recently_closed_tab_groups.set(group_key, move(pending_tab_group));
+}
+
+- (void)openNewWindowWithURLs:(Vector<URL::URL> const&)urls
+               activeTabIndex:(size_t)active_tab_index
+{
+    if (urls.is_empty())
+        return;
+
+    auto clamped_active_tab_index = active_tab_index < urls.size() ? active_tab_index : urls.size() - 1;
+    Tab* tab = nil;
+    TabController* active_controller = nil;
+
+    for (size_t index = 0; index < urls.size(); ++index) {
+        auto activate_tab = index == 0 ? Web::HTML::ActivateTab::Yes : Web::HTML::ActivateTab::No;
+        auto* controller = [self createNewTab:urls[index]
+                                      fromTab:tab
+                                  activateTab:activate_tab];
+
+        if (index == clamped_active_tab_index)
+            active_controller = controller;
+
+        tab = (Tab*)[controller window];
+    }
+
+    if (active_controller == nil)
+        return;
+
+    auto* active_window = [active_controller window];
+    if (auto* tab_group = [active_window tabGroup]; tab_group != nil)
+        [tab_group setSelectedWindow:active_window];
+
+    [active_window orderFrontRegardless];
+    [active_controller focusWebView];
 }
 
 - (void)removeTab:(TabController*)controller
@@ -241,9 +414,15 @@
     WebView::Application::the().clear_history();
 }
 
-- (void)updateReopenRecentlyClosedTabMenuItemEnabledState
+- (void)updateReopenRecentlyClosedMenuItem
 {
-    [self.reopen_recently_closed_tab_item setEnabled:WebView::Application::history_store().has_recently_closed_tabs()];
+    auto recently_closed_entry = WebView::Application::history_store().most_recently_closed_entry();
+    auto* title = recently_closed_entry.has_value() && recently_closed_entry->was_window
+        ? REOPEN_RECENTLY_CLOSED_WINDOW_MENU_ITEM_TITLE
+        : REOPEN_RECENTLY_CLOSED_TAB_MENU_ITEM_TITLE;
+
+    [self.reopen_recently_closed_tab_item setTitle:title];
+    [self.reopen_recently_closed_tab_item setEnabled:recently_closed_entry.has_value()];
 }
 
 - (NSMenuItem*)createApplicationMenu
@@ -382,10 +561,10 @@
     [submenu setAutoenablesItems:NO];
 
     [submenu addItem:Ladybird::create_application_menu_item(WebView::Application::the().reload_action())];
-    self.reopen_recently_closed_tab_item = [[NSMenuItem alloc] initWithTitle:@"Reopen Recently Closed Tab"
+    self.reopen_recently_closed_tab_item = [[NSMenuItem alloc] initWithTitle:REOPEN_RECENTLY_CLOSED_TAB_MENU_ITEM_TITLE
                                                                       action:@selector(reopenRecentlyClosedTab:)
                                                                keyEquivalent:@"T"];
-    [self updateReopenRecentlyClosedTabMenuItemEnabledState];
+    [self updateReopenRecentlyClosedMenuItem];
     [submenu addItem:self.reopen_recently_closed_tab_item];
     [submenu addItem:[NSMenuItem separatorItem]];
 

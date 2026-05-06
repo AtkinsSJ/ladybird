@@ -42,7 +42,7 @@ private:
 
     virtual void on_devtools_enabled() const override;
     virtual void on_devtools_disabled() const override;
-    virtual void on_history_entries_removed() const override;
+    virtual void on_recently_closed_entries_changed() const override;
 };
 
 }

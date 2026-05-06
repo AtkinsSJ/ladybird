@@ -386,10 +386,10 @@ void Application::on_devtools_disabled() const
     [delegate onDevtoolsDisabled];
 }
 
-void Application::on_history_entries_removed() const
+void Application::on_recently_closed_entries_changed() const
 {
     ApplicationDelegate* delegate = [NSApp delegate];
-    [delegate updateReopenRecentlyClosedTabMenuItemEnabledState];
+    [delegate updateReopenRecentlyClosedMenuItem];
 }
 
 }
