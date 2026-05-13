@@ -593,7 +593,7 @@ private:
     OwnPtr<BooleanExpression> parse_media_condition(TokenStream<ComponentValue>&);
     OwnPtr<MediaFeature> parse_media_feature(TokenStream<ComponentValue>&);
     Optional<MediaQuery::MediaType> parse_media_type(TokenStream<ComponentValue>&);
-    Optional<MediaFeatureValue> parse_media_feature_value(MediaFeatureID, TokenStream<ComponentValue>&);
+    Optional<QueryValue> parse_media_feature_value(MediaFeatureID, TokenStream<ComponentValue>&);
 
     using ParseTest = AK::Function<OwnPtr<BooleanExpression>(TokenStream<ComponentValue>&)> const&;
     OwnPtr<BooleanExpression> parse_boolean_expression(TokenStream<ComponentValue>&, MatchResult result_for_general_enclosed, ParseTest parse_test);

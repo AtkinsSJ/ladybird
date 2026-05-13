@@ -5,14 +5,55 @@
  */
 
 #include <LibWeb/CSS/MediaQuery.h>
+#include <LibWeb/CSS/Ratio.h>
 #include <LibWeb/CSS/Serialize.h>
-#include <LibWeb/CSS/StyleComputer.h>
+#include <LibWeb/CSS/StyleValues/CalculatedStyleValue.h>
+#include <LibWeb/CSS/StyleValues/KeywordStyleValue.h>
+#include <LibWeb/CSS/StyleValues/RatioStyleValue.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/Dump.h>
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/Page/Page.h>
 
 namespace Web::CSS {
+
+enum class QueryValueType : u8 {
+    Ident,
+    Length,
+    Ratio,
+    Resolution,
+    Integer,
+    Unknown,
+};
+
+static QueryValueType type_of(QueryValue const& value, ComputationContext const& computation_context)
+{
+    if (value->is_unresolved())
+        return QueryValueType::Unknown;
+
+    auto absolutized_value = value->absolutized(computation_context);
+    if (absolutized_value->is_keyword())
+        return QueryValueType::Ident;
+    if (absolutized_value->is_integer())
+        return QueryValueType::Integer;
+    if (absolutized_value->is_length())
+        return QueryValueType::Length;
+    if (absolutized_value->is_ratio())
+        return QueryValueType::Ratio;
+    if (absolutized_value->is_resolution())
+        return QueryValueType::Resolution;
+    if (absolutized_value->is_calculated()) {
+        auto const& calculated_value = absolutized_value->as_calculated();
+        if (calculated_value.resolves_to_number())
+            return QueryValueType::Integer;
+        if (calculated_value.resolves_to_length())
+            return QueryValueType::Length;
+        if (calculated_value.resolves_to_resolution())
+            return QueryValueType::Resolution;
+    }
+
+    return QueryValueType::Unknown;
+}
 
 NonnullRefPtr<MediaQuery> MediaQuery::create_not_all()
 {
@@ -26,51 +67,28 @@ NonnullRefPtr<MediaQuery> MediaQuery::create_not_all()
     return adopt_ref(*media_query);
 }
 
-String MediaFeatureValue::to_string(SerializationMode mode) const
-{
-    StringBuilder builder;
-    m_value->serialize(builder, mode);
-    return MUST(builder.to_string());
-}
-
 String MediaFeature::to_string() const
 {
-    auto comparison_string = [](Comparison comparison) -> StringView {
-        switch (comparison) {
-        case Comparison::Equal:
-            return "="sv;
-        case Comparison::LessThan:
-            return "<"sv;
-        case Comparison::LessThanOrEqual:
-            return "<="sv;
-        case Comparison::GreaterThan:
-            return ">"sv;
-        case Comparison::GreaterThanOrEqual:
-            return ">="sv;
-        }
-        VERIFY_NOT_REACHED();
-    };
-
     // NB: Even though we parse the parentheses as part of <media-in-parens> rather than <media-feature>, we serialize
     //     them as part of <media-feature> to avoid having to create a whole MediaInParens class just for serialization.
     switch (m_type) {
     case Type::IsTrue:
         return MUST(String::formatted("({})", string_from_media_feature_id(m_id)));
     case Type::ExactValue:
-        return MUST(String::formatted("({}: {})", string_from_media_feature_id(m_id), value().to_string(SerializationMode::Normal)));
+        return MUST(String::formatted("({}: {})", string_from_media_feature_id(m_id), value()->to_string(SerializationMode::Normal)));
     case Type::MinValue:
-        return MUST(String::formatted("(min-{}: {})", string_from_media_feature_id(m_id), value().to_string(SerializationMode::Normal)));
+        return MUST(String::formatted("(min-{}: {})", string_from_media_feature_id(m_id), value()->to_string(SerializationMode::Normal)));
     case Type::MaxValue:
-        return MUST(String::formatted("(max-{}: {})", string_from_media_feature_id(m_id), value().to_string(SerializationMode::Normal)));
+        return MUST(String::formatted("(max-{}: {})", string_from_media_feature_id(m_id), value()->to_string(SerializationMode::Normal)));
     case Type::Range: {
         auto& range = this->range();
         StringBuilder builder;
         builder.append('(');
         if (range.left_comparison.has_value())
-            builder.appendff("{} {} ", range.left_value->to_string(SerializationMode::Normal), comparison_string(*range.left_comparison));
+            builder.appendff("{} {} ", (*range.left_value)->to_string(SerializationMode::Normal), string_from_query_comparison(*range.left_comparison));
         builder.append(string_from_media_feature_id(m_id));
         if (range.right_comparison.has_value())
-            builder.appendff(" {} {}", comparison_string(*range.right_comparison), range.right_value->to_string(SerializationMode::Normal));
+            builder.appendff(" {} {}", string_from_query_comparison(*range.right_comparison), (*range.right_value)->to_string(SerializationMode::Normal));
         builder.append(')');
 
         return builder.to_string_without_validation();
@@ -99,43 +117,49 @@ MatchResult MediaFeature::evaluate(BooleanExpressionEvaluationContext const& con
         .length_resolution_context = Length::ResolutionContext::for_document(*document),
     };
     switch (m_type) {
-    case Type::IsTrue:
-        if (queried_value.is_integer())
-            return as_match_result(queried_value.integer(computation_context) != 0);
-        if (queried_value.is_length()) {
-            auto length = queried_value.length(computation_context);
+    case Type::IsTrue: {
+        QueryValue const& value = queried_value;
+        auto absolutized_queried_value = value->absolutized(computation_context);
+        switch (type_of(queried_value, computation_context)) {
+        case QueryValueType::Integer:
+            return as_match_result(int_from_style_value(absolutized_queried_value) != 0);
+        case QueryValueType::Length: {
+            auto length = Length::from_style_value(absolutized_queried_value, {});
             return as_match_result(length.raw_value() != 0);
         }
         // FIXME: I couldn't figure out from the spec how ratios should be evaluated in a boolean context.
-        if (queried_value.is_ratio())
-            return as_match_result(!queried_value.ratio(computation_context).is_degenerate());
-        if (queried_value.is_resolution())
-            return as_match_result(queried_value.resolution(computation_context).to_dots_per_pixel() != 0);
-        if (queried_value.is_ident()) {
-            if (media_feature_keyword_is_falsey(m_id, queried_value.ident()))
+        case QueryValueType::Ratio:
+            return as_match_result(!absolutized_queried_value->as_ratio().resolved().is_degenerate());
+        case QueryValueType::Resolution:
+            return as_match_result(Resolution::from_style_value(absolutized_queried_value).to_dots_per_pixel() != 0);
+        case QueryValueType::Ident:
+            if (media_feature_keyword_is_falsey(m_id, absolutized_queried_value->to_keyword()))
                 return MatchResult::False;
             return MatchResult::True;
+        case QueryValueType::Unknown:
+            return MatchResult::False;
         }
-        return MatchResult::False;
+        VERIFY_NOT_REACHED();
+    }
 
     case Type::ExactValue:
-        return compare(*document, value(), Comparison::Equal, queried_value);
+        return compare(value(), QueryComparison::Equal, queried_value, computation_context);
 
     case Type::MinValue:
-        return compare(*document, queried_value, Comparison::GreaterThanOrEqual, value());
+        return compare(queried_value, QueryComparison::GreaterThanOrEqual, value(), computation_context);
 
     case Type::MaxValue:
-        return compare(*document, queried_value, Comparison::LessThanOrEqual, value());
+        return compare(queried_value, QueryComparison::LessThanOrEqual, value(), computation_context);
 
     case Type::Range: {
         auto const& range = this->range();
         if (range.left_comparison.has_value()) {
-            if (auto const left_result = compare(*document, *range.left_value, *range.left_comparison, queried_value); left_result != MatchResult::True)
+            if (auto const left_result = compare(*range.left_value, *range.left_comparison, queried_value, computation_context); left_result != MatchResult::True)
                 return left_result;
         }
 
         if (range.right_comparison.has_value()) {
-            if (auto const right_result = compare(*document, queried_value, *range.right_comparison, *range.right_value); right_result != MatchResult::True)
+            if (auto const right_result = compare(queried_value, *range.right_comparison, *range.right_value, computation_context); right_result != MatchResult::True)
                 return right_result;
         }
 
@@ -146,97 +170,99 @@ MatchResult MediaFeature::evaluate(BooleanExpressionEvaluationContext const& con
     VERIFY_NOT_REACHED();
 }
 
-MatchResult MediaFeature::compare(DOM::Document const& document, MediaFeatureValue const& left, Comparison comparison, MediaFeatureValue const& right)
+MatchResult MediaFeature::compare(QueryValue const& left, QueryComparison comparison, QueryValue const& right, ComputationContext const& computation_context)
 {
-    if (left.is_unknown() || right.is_unknown())
+    auto left_type = type_of(left, computation_context);
+    auto right_type = type_of(right, computation_context);
+
+    if (left_type == QueryValueType::Unknown || right_type == QueryValueType::Unknown)
         return MatchResult::Unknown;
 
-    if (!left.is_same_type(right))
+    if (left_type != right_type)
         return MatchResult::False;
 
-    if (left.is_ident()) {
-        if (comparison == Comparison::Equal)
-            return as_match_result(left.ident() == right.ident());
+    auto absolutized_left = left->absolutized(computation_context);
+    auto absolutized_right = right->absolutized(computation_context);
+
+    switch (left_type) {
+    case QueryValueType::Ident:
+        if (comparison == QueryComparison::Equal)
+            return as_match_result(absolutized_left->to_keyword() == absolutized_right->to_keyword());
         return MatchResult::False;
-    }
 
-    auto length_resolution_context = Length::ResolutionContext::for_document(document);
-
-    ComputationContext computation_context {
-        .length_resolution_context = length_resolution_context,
-    };
-
-    if (left.is_integer()) {
+    case QueryValueType::Integer:
         switch (comparison) {
-        case Comparison::Equal:
-            return as_match_result(left.integer(computation_context) == right.integer(computation_context));
-        case Comparison::LessThan:
-            return as_match_result(left.integer(computation_context) < right.integer(computation_context));
-        case Comparison::LessThanOrEqual:
-            return as_match_result(left.integer(computation_context) <= right.integer(computation_context));
-        case Comparison::GreaterThan:
-            return as_match_result(left.integer(computation_context) > right.integer(computation_context));
-        case Comparison::GreaterThanOrEqual:
-            return as_match_result(left.integer(computation_context) >= right.integer(computation_context));
+        case QueryComparison::Equal:
+            return as_match_result(int_from_style_value(absolutized_left) == int_from_style_value(absolutized_right));
+        case QueryComparison::LessThan:
+            return as_match_result(int_from_style_value(absolutized_left) < int_from_style_value(absolutized_right));
+        case QueryComparison::LessThanOrEqual:
+            return as_match_result(int_from_style_value(absolutized_left) <= int_from_style_value(absolutized_right));
+        case QueryComparison::GreaterThan:
+            return as_match_result(int_from_style_value(absolutized_left) > int_from_style_value(absolutized_right));
+        case QueryComparison::GreaterThanOrEqual:
+            return as_match_result(int_from_style_value(absolutized_left) >= int_from_style_value(absolutized_right));
         }
         VERIFY_NOT_REACHED();
-    }
 
-    if (left.is_length()) {
-        auto left_px = left.length(computation_context).absolute_length_to_px();
-        auto right_px = right.length(computation_context).absolute_length_to_px();
+    case QueryValueType::Length: {
+        auto left_px = Length::from_style_value(absolutized_left, {}).absolute_length_to_px();
+        auto right_px = Length::from_style_value(absolutized_right, {}).absolute_length_to_px();
 
         switch (comparison) {
-        case Comparison::Equal:
+        case QueryComparison::Equal:
             return as_match_result(left_px == right_px);
-        case Comparison::LessThan:
+        case QueryComparison::LessThan:
             return as_match_result(left_px < right_px);
-        case Comparison::LessThanOrEqual:
+        case QueryComparison::LessThanOrEqual:
             return as_match_result(left_px <= right_px);
-        case Comparison::GreaterThan:
+        case QueryComparison::GreaterThan:
             return as_match_result(left_px > right_px);
-        case Comparison::GreaterThanOrEqual:
+        case QueryComparison::GreaterThanOrEqual:
             return as_match_result(left_px >= right_px);
         }
-
         VERIFY_NOT_REACHED();
     }
 
-    if (left.is_ratio()) {
-        auto left_decimal = left.ratio(computation_context).value();
-        auto right_decimal = right.ratio(computation_context).value();
+    case QueryValueType::Ratio: {
+        auto left_decimal = absolutized_left->as_ratio().resolved().value();
+        auto right_decimal = absolutized_right->as_ratio().resolved().value();
 
         switch (comparison) {
-        case Comparison::Equal:
+        case QueryComparison::Equal:
             return as_match_result(left_decimal == right_decimal);
-        case Comparison::LessThan:
+        case QueryComparison::LessThan:
             return as_match_result(left_decimal < right_decimal);
-        case Comparison::LessThanOrEqual:
+        case QueryComparison::LessThanOrEqual:
             return as_match_result(left_decimal <= right_decimal);
-        case Comparison::GreaterThan:
+        case QueryComparison::GreaterThan:
             return as_match_result(left_decimal > right_decimal);
-        case Comparison::GreaterThanOrEqual:
+        case QueryComparison::GreaterThanOrEqual:
             return as_match_result(left_decimal >= right_decimal);
         }
         VERIFY_NOT_REACHED();
     }
 
-    if (left.is_resolution()) {
-        auto left_dppx = left.resolution(computation_context).to_dots_per_pixel();
-        auto right_dppx = right.resolution(computation_context).to_dots_per_pixel();
+    case QueryValueType::Resolution: {
+        auto left_dppx = Resolution::from_style_value(absolutized_left).to_dots_per_pixel();
+        auto right_dppx = Resolution::from_style_value(absolutized_right).to_dots_per_pixel();
 
         switch (comparison) {
-        case Comparison::Equal:
+        case QueryComparison::Equal:
             return as_match_result(left_dppx == right_dppx);
-        case Comparison::LessThan:
+        case QueryComparison::LessThan:
             return as_match_result(left_dppx < right_dppx);
-        case Comparison::LessThanOrEqual:
+        case QueryComparison::LessThanOrEqual:
             return as_match_result(left_dppx <= right_dppx);
-        case Comparison::GreaterThan:
+        case QueryComparison::GreaterThan:
             return as_match_result(left_dppx > right_dppx);
-        case Comparison::GreaterThanOrEqual:
+        case QueryComparison::GreaterThanOrEqual:
             return as_match_result(left_dppx >= right_dppx);
         }
+        VERIFY_NOT_REACHED();
+    }
+
+    case QueryValueType::Unknown:
         VERIFY_NOT_REACHED();
     }
 

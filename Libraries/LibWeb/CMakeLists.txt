@@ -228,6 +228,7 @@ set(SOURCES
     CSS/PreferredColorScheme.cpp
     CSS/PreferredContrast.cpp
     CSS/PreferredMotion.cpp
+    CSS/QueryValue.cpp
     CSS/Ratio.cpp
     CSS/Resolution.cpp
     CSS/Screen.cpp

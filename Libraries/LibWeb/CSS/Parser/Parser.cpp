@@ -31,6 +31,7 @@
 #include <LibWeb/CSS/PropertyNameAndID.h>
 #include <LibWeb/CSS/Sizing.h>
 #include <LibWeb/CSS/StyleComputer.h>
+#include <LibWeb/CSS/StyleValues/KeywordStyleValue.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/Dump.h>
 #include <LibWeb/HTML/HTMLImageElement.h>
