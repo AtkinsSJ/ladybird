@@ -109,7 +109,8 @@ Optional<TransformData> compute_transform(PaintableBox const& paintable_box, CSS
 
     // The transformation matrix is computed from the transform, transform-origin, translate, rotate, scale, and
     // offset properties as follows:
-    auto reference_box = paintable_box.transform_reference_box();
+    auto transform_reference_box = paintable_box.transform_reference_box_with_coordinate_space();
+    auto reference_box = transform_reference_box.rect;
     auto const& css_transform_origin = computed_values.transform_origin();
     auto origin_x = css_transform_origin.x.to_px(reference_box.width());
     auto origin_y = css_transform_origin.y.to_px(reference_box.height());
@@ -148,6 +149,15 @@ Optional<TransformData> compute_transform(PaintableBox const& paintable_box, CSS
     }
 
     auto origin = reference_box.location() + CSSPixelPoint { origin_x, origin_y };
+    if (transform_reference_box.coordinate_space == PaintableBox::TransformReferenceBox::CoordinateSpace::SVGUserSpace) {
+        // https://drafts.csswg.org/css-transforms-1/#transform-box
+        // A reference box adds an additional offset to the origin specified by the 'transform-origin' property.
+        if (auto svg_to_css_pixels = svg_to_css_pixels_transform(paintable_box); svg_to_css_pixels.has_value()) {
+            auto mapped_origin = svg_to_css_pixels->map(origin.to_type<float>());
+            origin = transform_reference_box.coordinate_space_origin + mapped_origin.to_type<CSSPixels>();
+        }
+    }
+
     auto scale = static_cast<float>(pixel_ratio);
     auto device_origin = origin.to_type<float>() * scale;
     return TransformData { scale_matrix_for_device_pixels(matrix, scale), device_origin };

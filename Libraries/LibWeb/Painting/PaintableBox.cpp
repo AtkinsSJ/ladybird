@@ -40,6 +40,7 @@
 #include <LibWeb/Painting/ResizeHandle.h>
 #include <LibWeb/Painting/SVGGraphicsPaintable.h>
 #include <LibWeb/Painting/SVGPaintable.h>
+#include <LibWeb/Painting/SVGPathPaintable.h>
 #include <LibWeb/Painting/SVGSVGPaintable.h>
 #include <LibWeb/Painting/Scrollbar.h>
 #include <LibWeb/Painting/ShadowPainting.h>
@@ -48,6 +49,11 @@
 #include <LibWeb/Painting/ViewportPaintable.h>
 #include <LibWeb/Platform/FontPlugin.h>
 #include <LibWeb/SVG/SVGFilterElement.h>
+#include <LibWeb/SVG/SVGFitToViewBox.h>
+#include <LibWeb/SVG/SVGGraphicsElement.h>
+#include <LibWeb/SVG/SVGSVGElement.h>
+#include <LibWeb/SVG/SVGSymbolElement.h>
+#include <LibWeb/SVG/SVGUseElement.h>
 
 namespace Web::Painting {
 
@@ -1904,8 +1910,97 @@ void PaintableBox::set_needs_repaint(InvalidateDisplayList should_invalidate_dis
     Paintable::set_needs_repaint(should_invalidate_display_list);
 }
 
-// https://www.w3.org/TR/css-transforms-1/#reference-box
-CSSPixelRect PaintableBox::transform_reference_box() const
+// https://svgwg.org/svg2-draft/coords.html#ElementsThatEstablishViewports
+static bool establishes_svg_viewport(PaintableBox const& paintable_box)
+{
+    // The following elements establish new SVG viewports:
+
+    // - The 'svg' element
+    if (is<SVGSVGPaintable>(paintable_box))
+        return true;
+
+    // - A 'symbol' element that is instanced by a 'use' element.
+    if (auto const* symbol_element = as_if<SVG::SVGSymbolElement>(paintable_box.dom_node().ptr())) {
+        auto const* shadow_root = as_if<DOM::ShadowRoot>(symbol_element->parent());
+        return shadow_root && shadow_root->host() && is<SVG::SVGUseElement>(*shadow_root->host());
+    }
+
+    // For historical reasons, the 'pattern' and 'marker element' elements  do not create a new viewport, despite
+    // accepting a 'viewBox' attribute.
+    return false;
+}
+
+static PaintableBox const* nearest_svg_viewport_paintable(PaintableBox const& paintable_box)
+{
+    if (establishes_svg_viewport(paintable_box))
+        return &paintable_box;
+
+    PaintableBox const* svg_viewport_paintable = nullptr;
+    paintable_box.for_each_ancestor([&](auto const& ancestor) {
+        auto const* ancestor_paintable_box = as_if<PaintableBox>(ancestor);
+        if (!ancestor_paintable_box || !establishes_svg_viewport(*ancestor_paintable_box))
+            return IterationDecision::Continue;
+
+        svg_viewport_paintable = ancestor_paintable_box;
+        return IterationDecision::Break;
+    });
+    return svg_viewport_paintable;
+}
+
+static Optional<SVG::ViewBox> svg_viewport_view_box(PaintableBox const& paintable_box)
+{
+    auto dom_node = paintable_box.dom_node();
+    if (!dom_node)
+        return {};
+
+    if (auto const* svg_element = as_if<SVG::SVGSVGElement>(*dom_node))
+        return svg_element->active_view_box();
+
+    if (auto const* fit_to_view_box = as_if<SVG::SVGFitToViewBox>(*dom_node))
+        return fit_to_view_box->view_box();
+
+    return {};
+}
+
+static Optional<PaintableBox::TransformReferenceBox> svg_transform_reference_box(PaintableBox const& paintable_box, CSS::TransformBox transform_box)
+{
+    auto const* svg_viewport_paintable = nearest_svg_viewport_paintable(paintable_box);
+    if (!svg_viewport_paintable)
+        return {};
+
+    auto coordinate_space_origin = svg_viewport_paintable->absolute_rect().location();
+    if (auto const* svg_path_paintable = as_if<SVGPathPaintable>(paintable_box); svg_path_paintable && svg_path_paintable->computed_path().has_value()) {
+        auto rect = svg_path_paintable->computed_path()->bounding_box().to_type<CSSPixels>();
+        if (transform_box == CSS::TransformBox::StrokeBox) {
+            auto stroke_width = CSSPixels::nearest_value_for(svg_path_paintable->dom_node().visible_stroke_width());
+            rect.inflate(stroke_width, stroke_width);
+        }
+        return PaintableBox::TransformReferenceBox {
+            rect,
+            PaintableBox::TransformReferenceBox::CoordinateSpace::SVGUserSpace,
+            coordinate_space_origin
+        };
+    }
+
+    auto const* svg_graphics_paintable = as_if<SVGGraphicsPaintable>(paintable_box);
+    if (!svg_graphics_paintable)
+        return {};
+
+    auto inverse_svg_to_css_pixels_transform = svg_graphics_paintable->computed_transforms().svg_to_css_pixels_transform().inverse();
+    if (!inverse_svg_to_css_pixels_transform.has_value())
+        return {};
+
+    auto reference_box = transform_box == CSS::TransformBox::FillBox ? paintable_box.absolute_rect() : paintable_box.absolute_border_box_rect();
+    auto reference_box_in_svg_viewport = reference_box.to_type<float>().translated(-coordinate_space_origin.to_type<float>());
+    return PaintableBox::TransformReferenceBox {
+        inverse_svg_to_css_pixels_transform->map(reference_box_in_svg_viewport).to_type<CSSPixels>(),
+        PaintableBox::TransformReferenceBox::CoordinateSpace::SVGUserSpace,
+        coordinate_space_origin
+    };
+}
+
+// https://drafts.csswg.org/css-transforms-1/#transform-box
+PaintableBox::TransformReferenceBox PaintableBox::transform_reference_box_with_coordinate_space() const
 {
     auto transform_box = computed_values().transform_box();
     // For SVG elements without associated CSS layout box, the used value for content-box is fill-box and for
@@ -1944,30 +2039,58 @@ CSSPixelRect PaintableBox::transform_reference_box() const
     case CSS::TransformBox::ContentBox:
         // Uses the content box as reference box.
         // FIXME: The reference box of a table is the border box of its table wrapper box, not its table box.
-        return absolute_rect();
+        return { absolute_rect() };
     case CSS::TransformBox::BorderBox:
         // Uses the border box as reference box.
         // FIXME: The reference box of a table is the border box of its table wrapper box, not its table box.
-        return absolute_border_box_rect();
+        return { absolute_border_box_rect() };
     case CSS::TransformBox::FillBox:
         // Uses the object bounding box as reference box.
-        // FIXME: For now we're using the content rect as an approximation.
-        return absolute_rect();
+        if (auto svg_reference_box = svg_transform_reference_box(*this, transform_box); svg_reference_box.has_value())
+            return svg_reference_box.release_value();
+        // FIXME: For non-SVG elements, we're using the content rect as an approximation.
+        return { absolute_rect() };
     case CSS::TransformBox::StrokeBox:
         // Uses the stroke bounding box as reference box.
-        // FIXME: For now we're using the border rect as an approximation.
-        return absolute_border_box_rect();
+        if (auto svg_reference_box = svg_transform_reference_box(*this, transform_box); svg_reference_box.has_value())
+            return svg_reference_box.release_value();
+        // FIXME: For non-SVG elements, we're using the border rect as an approximation.
+        return { absolute_border_box_rect() };
     case CSS::TransformBox::ViewBox:
         // Uses the nearest SVG viewport as reference box.
-        // FIXME: If a viewBox attribute is specified for the SVG viewport creating element:
-        //  - The reference box is positioned at the origin of the coordinate system established by the viewBox attribute.
-        //  - The dimension of the reference box is set to the width and height values of the viewBox attribute.
-        auto svg_paintable = first_ancestor_of_type<Painting::SVGSVGPaintable>();
-        if (!svg_paintable)
-            return absolute_border_box_rect();
-        return svg_paintable->absolute_rect();
+        auto svg_viewport_paintable = nearest_svg_viewport_paintable(*this);
+        if (!svg_viewport_paintable)
+            return { absolute_border_box_rect() };
+
+        // If a viewBox attribute is specified for the SVG viewport creating element:
+        if (auto view_box = svg_viewport_view_box(*svg_viewport_paintable); view_box.has_value()) {
+            // The reference box is positioned at the origin of the coordinate system established by the viewBox
+            // attribute.
+            // The dimension of the reference box is set to the width and height values of the viewBox attribute.
+            return {
+                CSSPixelRect {
+                    CSSPixels(view_box->min_x),
+                    CSSPixels(view_box->min_y),
+                    CSSPixels(view_box->width),
+                    CSSPixels(view_box->height),
+                },
+                TransformReferenceBox::CoordinateSpace::SVGUserSpace,
+                svg_viewport_paintable->absolute_rect().location()
+            };
+        }
+
+        return {
+            CSSPixelRect { {}, svg_viewport_paintable->absolute_rect().size() },
+            TransformReferenceBox::CoordinateSpace::SVGUserSpace,
+            svg_viewport_paintable->absolute_rect().location()
+        };
     }
     VERIFY_NOT_REACHED();
+}
+
+CSSPixelRect PaintableBox::transform_reference_box() const
+{
+    return transform_reference_box_with_coordinate_space().rect;
 }
 
 BorderRadiiData PaintableBox::border_radii_data() const

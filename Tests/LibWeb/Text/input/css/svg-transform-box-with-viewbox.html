@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<svg width="200" height="200" viewBox="0 0 100 100">
+    <rect id="fill-box-target" x="10" y="20" width="40" height="60" style="transform: translate(50%, 50%); transform-origin: 50% 50%; transform-box: fill-box;"></rect>
+    <rect id="stroke-box-target" x="10" y="20" width="40" height="60" stroke="black" stroke-width="10" style="transform: translate(50%, 50%); transform-origin: 50% 50%; transform-box: stroke-box;"></rect>
+</svg>
+<script>
+    test(() => {
+        let fillBoxStyle = getComputedStyle(document.getElementById("fill-box-target"));
+        println(`fill-box transform: ${fillBoxStyle.transform}`);
+
+        let strokeBoxStyle = getComputedStyle(document.getElementById("stroke-box-target"));
+        println(`stroke-box transform: ${strokeBoxStyle.transform}`);
+    });
+</script>

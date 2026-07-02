@@ -1,0 +1,9 @@
+Harness status: OK
+
+Found 4 tests
+
+4 Pass
+Pass	Percentage 'translate(...)' with 'fill-box' transform-box
+Pass	Percentage 'translate(...)' with 'view-box' transform-box
+Pass	Percentage 'translate(...)' with 'view-box' transform-box in nested <svg> with 'viewBox'
+Pass	Percentage 'translate(...)' with 'view-box' transform-box in nested <svg> without 'viewBox'

@@ -263,6 +263,17 @@ public:
     RefPtr<ResizeHandle> resize_handle() const;
     NonnullRefPtr<ResizeHandle> ensure_resize_handle();
 
+    struct TransformReferenceBox {
+        enum class CoordinateSpace {
+            CSSPixels,
+            SVGUserSpace,
+        };
+
+        CSSPixelRect rect;
+        CoordinateSpace coordinate_space { CoordinateSpace::CSSPixels };
+        CSSPixelPoint coordinate_space_origin {};
+    };
+    TransformReferenceBox transform_reference_box_with_coordinate_space() const;
     CSSPixelRect transform_reference_box() const;
 
     ScrollFrameIndex nearest_scroll_frame_index() const;

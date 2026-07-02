@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<link rel="match" href="../expected/svg-symbol-transform-box-viewbox-ref.html">
+<svg width="120" height="60" viewBox="0 0 120 60">
+  <symbol id="symbol" viewBox="0 0 20 20">
+    <rect width="20" height="20" fill="red"></rect>
+    <rect width="10" height="20" fill="green" style="transform-box: view-box; transform: translate(50%, 0);"></rect>
+  </symbol>
+  <use href="#symbol" width="40" height="40"></use>
+</svg>
