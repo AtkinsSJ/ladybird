@@ -8,8 +8,10 @@
     test(() => {
         let fillBoxStyle = getComputedStyle(document.getElementById("fill-box-target"));
         println(`fill-box transform: ${fillBoxStyle.transform}`);
+        println(`fill-box transform-origin: ${fillBoxStyle.transformOrigin}`);
 
         let strokeBoxStyle = getComputedStyle(document.getElementById("stroke-box-target"));
         println(`stroke-box transform: ${strokeBoxStyle.transform}`);
+        println(`stroke-box transform-origin: ${strokeBoxStyle.transformOrigin}`);
     });
 </script>

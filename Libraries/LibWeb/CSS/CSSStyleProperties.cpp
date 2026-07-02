@@ -1054,6 +1054,28 @@ RefPtr<StyleValue const> CSSStyleProperties::style_value_for_computed_property(L
             return TransformationStyleValue::create(PropertyID::Transform, TransformFunction::Matrix3d, move(parameters));
         }
     }
+    case PropertyID::TransformOrigin: {
+        // https://drafts.csswg.org/css-transforms-1/#transform-origin-property
+        // The 'transform-origin' property is a resolved value special case property like 'height'.
+        auto first_paintable = layout_node.first_paintable();
+        auto const* paintable_box = as_if<Painting::PaintableBox>(first_paintable.ptr());
+        if (!paintable_box)
+            return get_computed_value(property_id);
+        auto reference_box = paintable_box->transform_reference_box();
+        auto const& transform_origin = layout_node.computed_values().transform_origin();
+        // A percentage for the horizontal offset is relative to the width of the reference box. A percentage for the
+        // vertical offset is relative to the height of the reference box.
+        StyleValueVector values {
+            LengthStyleValue::create(Length::make_px(transform_origin.x.to_px(reference_box.width()))),
+            LengthStyleValue::create(Length::make_px(transform_origin.y.to_px(reference_box.height()))),
+        };
+
+        auto origin_z = transform_origin.z.to_px(0);
+        if (origin_z != 0)
+            values.append(LengthStyleValue::create(Length::make_px(origin_z)));
+
+        return StyleValueList::create(move(values), StyleValueList::Separator::Space, StyleValueList::Collapsible::No);
+    }
     case PropertyID::AnimationDuration: {
         // https://drafts.csswg.org/css-animations-2/#animation-duration
         // For backwards-compatibility with Level 1, when the computed value of animation-timeline is auto (i.e. only
