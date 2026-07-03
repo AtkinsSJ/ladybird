@@ -74,6 +74,12 @@ Property filters support wildcards, for example `computed border-*`.
 - `source <index|actor>` prints source text by list index or source actor.
 
 
+### Console Evaluation
+
+- `eval <javascript>` evaluates JavaScript in the selected frame and prints the
+  result or exception.
+
+
 ## Smoke Check
 
 A useful manual sequence is:

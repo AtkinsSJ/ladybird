@@ -80,6 +80,7 @@ enum Command {
     Child,
     Children,
     Computed,
+    Eval,
     Help,
     Highlight,
     Html,
@@ -130,6 +131,10 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["computed"],
         command: Command::Computed,
+    },
+    CommandSpec {
+        names: &["eval"],
+        command: Command::Eval,
     },
     CommandSpec {
         names: &["help"],
@@ -1368,6 +1373,9 @@ fn print_help() {
     outputln!("  JavaScript sources:");
     outputln!("    sources              List JavaScript sources");
     outputln!("    source <index|actor> Fetch JavaScript source text");
+    outputln!();
+    outputln!("  Console:");
+    outputln!("    eval <javascript>    Evaluate JavaScript in the page");
 }
 
 fn raw_request(client: &mut DevToolsClient, json_text: &str) -> Result<()> {
@@ -1596,6 +1604,26 @@ fn print_applied_rules(title: &str, response: &Value, filters: &[String]) {
         if printed == 0 && !filters.is_empty() {
             outputln!("        <no matching declarations>");
         }
+    }
+}
+
+fn print_evaluation_result(message: &Value) {
+    if let Some(exception) = message.get("exception").filter(|exception| !exception.is_null()) {
+        outputln!("exception: {}", compact_json(exception));
+        return;
+    }
+
+    if let Some(result) = message.get("result") {
+        if let Some(value) = result.get("value") {
+            outputln!(
+                "result: {}",
+                value.as_str().map_or_else(|| compact_json(value), String::from)
+            );
+        } else {
+            outputln!("result: {}", compact_json(result));
+        }
+    } else {
+        outputln!("result: <empty>");
     }
 }
 
@@ -1926,6 +1954,29 @@ fn source_text(client: &mut DevToolsClient, id: &str) -> Result<()> {
     Ok(())
 }
 
+fn evaluate_javascript(client: &mut DevToolsClient, text: &str) -> Result<()> {
+    let console = client.ensure_console()?;
+    let response = client.request_for_frame_actor(json!({
+        "to": console,
+        "type": "evaluateJSAsync",
+        "text": text,
+    }))?;
+    let result_id = string_member(&response, "resultID")?;
+    outputln!("evaluation started: {result_id}");
+
+    loop {
+        let message = client.read_message()?;
+        if message.get("from").and_then(Value::as_str) == Some(console.as_str())
+            && message.get("type").and_then(Value::as_str) == Some("evaluationResult")
+            && message.get("resultID").and_then(Value::as_str) == Some(result_id.as_str())
+        {
+            print_evaluation_result(&message);
+            return Ok(());
+        }
+        client.handle_message(message, EventDisplay::Defer)?;
+    }
+}
+
 fn run_repl(mut client: DevToolsClient) -> Result<()> {
     print_help();
     let command_names = command_names();
@@ -1980,6 +2031,7 @@ fn run_repl(mut client: DevToolsClient) -> Result<()> {
             Some(Command::Stylesheet) => stylesheet_text(&mut client, rest),
             Some(Command::Sources) => list_sources(&mut client),
             Some(Command::Source) => source_text(&mut client, rest),
+            Some(Command::Eval) => evaluate_javascript(&mut client, rest),
             Some(Command::Raw) => raw_request(&mut client, rest),
             Some(Command::Quit) => break,
             None => Err(format!("Unknown command: {command}").into()),
