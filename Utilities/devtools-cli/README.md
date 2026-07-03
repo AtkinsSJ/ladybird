@@ -112,6 +112,16 @@ Property filters support wildcards, for example `computed border-*`.
 - `accessibility` prints accessibility data for the selected DOM node.
 
 
+### Navigation
+
+- `reload` reloads the current tab.
+- `navigate <url>` navigates the current tab.
+- `back` and `forward` traverse session history.
+
+Navigation clears cached frame-scoped actors and the selected node so later
+commands do not wait on stale protocol actors.
+
+
 ## Smoke Check
 
 A useful manual sequence is:
@@ -128,4 +138,9 @@ children
 grids
 highlight-grid --line-numbers --color #ff00ff
 unhighlight-grid --all
+```
+
+```text
+reload
+select body
 ```

@@ -76,6 +76,7 @@ struct Options {
 enum Command {
     Accessibility,
     Attach,
+    Back,
     Box,
     CancelPick,
     Child,
@@ -83,12 +84,14 @@ enum Command {
     Computed,
     Eval,
     Flex,
+    Forward,
     Grid,
     Grids,
     Help,
     Highlight,
     HighlightGrid,
     Html,
+    Navigate,
     Next,
     OuterHtml,
     Parent,
@@ -97,6 +100,7 @@ enum Command {
     Query,
     Quit,
     Raw,
+    Reload,
     Rules,
     Select,
     Selected,
@@ -122,6 +126,10 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["attach"],
         command: Command::Attach,
+    },
+    CommandSpec {
+        names: &["back"],
+        command: Command::Back,
     },
     CommandSpec {
         names: &["box"],
@@ -152,6 +160,10 @@ const COMMANDS: &[CommandSpec] = &[
         command: Command::Flex,
     },
     CommandSpec {
+        names: &["forward"],
+        command: Command::Forward,
+    },
+    CommandSpec {
         names: &["grid"],
         command: Command::Grid,
     },
@@ -174,6 +186,10 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["html"],
         command: Command::Html,
+    },
+    CommandSpec {
+        names: &["navigate"],
+        command: Command::Navigate,
     },
     CommandSpec {
         names: &["next"],
@@ -206,6 +222,10 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["raw"],
         command: Command::Raw,
+    },
+    CommandSpec {
+        names: &["reload"],
+        command: Command::Reload,
     },
     CommandSpec {
         names: &["rules"],
@@ -1431,6 +1451,12 @@ fn print_help() {
     outputln!();
     outputln!("  Accessibility:");
     outputln!("    accessibility        Print accessibility data for the selected node");
+    outputln!();
+    outputln!("  Navigation:");
+    outputln!("    reload               Reload the current tab");
+    outputln!("    navigate <url>       Navigate the current tab");
+    outputln!("    back                 Go back in session history");
+    outputln!("    forward              Go forward in session history");
 }
 
 fn raw_request(client: &mut DevToolsClient, json_text: &str) -> Result<()> {
@@ -2598,6 +2624,44 @@ fn accessibility_command(client: &mut DevToolsClient) -> Result<()> {
     Ok(())
 }
 
+fn navigation_command(client: &mut DevToolsClient, command: &str, url: &str) -> Result<()> {
+    if command == "navigate" && url.is_empty() {
+        return Err("Usage: navigate <url>".into());
+    }
+
+    let tab = client.ensure_tab()?;
+    let message = match command {
+        "reload" => json!({
+            "to": tab,
+            "type": "reloadDescriptor",
+            "bypassCache": false,
+        }),
+        "navigate" => json!({
+            "to": tab,
+            "type": "navigateTo",
+            "url": url,
+        }),
+        "back" => json!({
+            "to": tab,
+            "type": "goBack",
+        }),
+        "forward" => json!({
+            "to": tab,
+            "type": "goForward",
+        }),
+        _ => return Err(format!("Unknown navigation command: {command}").into()),
+    };
+
+    let response = client.request(message)?;
+    client.clear_frame_actors();
+    if let Some(url) = response.get("url").and_then(Value::as_str) {
+        outputln!("{command}: {url}");
+    } else {
+        outputln!("{command}: ok");
+    }
+    Ok(())
+}
+
 fn run_repl(mut client: DevToolsClient) -> Result<()> {
     print_help();
     let command_names = command_names();
@@ -2660,6 +2724,10 @@ fn run_repl(mut client: DevToolsClient) -> Result<()> {
             Some(Command::Flex) => inspect_flex(&mut client, rest),
             Some(Command::Storage) => storage_command(&mut client, rest),
             Some(Command::Accessibility) => accessibility_command(&mut client),
+            Some(Command::Reload) => navigation_command(&mut client, "reload", ""),
+            Some(Command::Navigate) => navigation_command(&mut client, "navigate", rest),
+            Some(Command::Back) => navigation_command(&mut client, "back", ""),
+            Some(Command::Forward) => navigation_command(&mut client, "forward", ""),
             Some(Command::Raw) => raw_request(&mut client, rest),
             Some(Command::Quit) => break,
             None => Err(format!("Unknown command: {command}").into()),
