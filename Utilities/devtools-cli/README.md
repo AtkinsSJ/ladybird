@@ -107,6 +107,11 @@ Property filters support wildcards, for example `computed border-*`.
   IndexedDB object store.
 
 
+### Accessibility
+
+- `accessibility` prints accessibility data for the selected DOM node.
+
+
 ## Smoke Check
 
 A useful manual sequence is:

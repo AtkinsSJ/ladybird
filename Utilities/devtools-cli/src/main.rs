@@ -74,6 +74,7 @@ struct Options {
 
 #[derive(Clone, Copy)]
 enum Command {
+    Accessibility,
     Attach,
     Box,
     CancelPick,
@@ -114,6 +115,10 @@ struct CommandSpec {
 }
 
 const COMMANDS: &[CommandSpec] = &[
+    CommandSpec {
+        names: &["accessibility"],
+        command: Command::Accessibility,
+    },
     CommandSpec {
         names: &["attach"],
         command: Command::Attach,
@@ -1423,6 +1428,9 @@ fn print_help() {
     outputln!("                         Show cookies/local/session/indexed storage");
     outputln!("    storage indexed [--database <name>] [--store <name>] [filters...]");
     outputln!("                         Show IndexedDB databases, stores, or records");
+    outputln!();
+    outputln!("  Accessibility:");
+    outputln!("    accessibility        Print accessibility data for the selected node");
 }
 
 fn raw_request(client: &mut DevToolsClient, json_text: &str) -> Result<()> {
@@ -2554,6 +2562,42 @@ fn storage_command(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
     Ok(())
 }
 
+fn accessibility_command(client: &mut DevToolsClient) -> Result<()> {
+    let selected_node = client.selected_actor()?;
+    let accessibility_walker = client.ensure_accessibility_walker()?;
+    let response = client.request_for_selected_node(json!({
+        "to": accessibility_walker,
+        "type": "getAccessibleFor",
+        "node": selected_node,
+    }))?;
+
+    let Some(accessible) = response.get("accessible").filter(|accessible| !accessible.is_null()) else {
+        outputln!("No accessible for {}", client.selected_label());
+        return Ok(());
+    };
+
+    outputln!("{}:", client.selected_label());
+    if let Some(role) = accessible.get("role").and_then(Value::as_str) {
+        outputln!("    role: {role}");
+    }
+    if let Some(name) = accessible.get("name").and_then(Value::as_str)
+        && !name.is_empty()
+    {
+        outputln!("    name: {name}");
+    }
+    if let Some(child_count) = accessible.get("childCount").and_then(Value::as_u64) {
+        outputln!("    childCount: {child_count}");
+    }
+
+    let actor = string_member(accessible, "actor")?;
+    let hydrated = client.request_for_frame_actor(json!({
+        "to": actor,
+        "type": "hydrate",
+    }))?;
+    print_layout_object("properties", hydrated.get("properties"));
+    Ok(())
+}
+
 fn run_repl(mut client: DevToolsClient) -> Result<()> {
     print_help();
     let command_names = command_names();
@@ -2615,6 +2659,7 @@ fn run_repl(mut client: DevToolsClient) -> Result<()> {
             Some(Command::UnhighlightGrid) => unhighlight_grid(&mut client, rest),
             Some(Command::Flex) => inspect_flex(&mut client, rest),
             Some(Command::Storage) => storage_command(&mut client, rest),
+            Some(Command::Accessibility) => accessibility_command(&mut client),
             Some(Command::Raw) => raw_request(&mut client, rest),
             Some(Command::Quit) => break,
             None => Err(format!("Unknown command: {command}").into()),
