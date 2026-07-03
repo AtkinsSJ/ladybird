@@ -101,6 +101,7 @@ enum Command {
     Selected,
     Source,
     Sources,
+    Storage,
     Stylesheet,
     Stylesheets,
     Tabs,
@@ -220,6 +221,10 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["sources"],
         command: Command::Sources,
+    },
+    CommandSpec {
+        names: &["storage"],
+        command: Command::Storage,
     },
     CommandSpec {
         names: &["stylesheet"],
@@ -1412,6 +1417,12 @@ fn print_help() {
     outputln!();
     outputln!("  Flexbox layout:");
     outputln!("    flex                 Inspect the selected flex container");
+    outputln!();
+    outputln!("  Storage:");
+    outputln!("    storage <type> [filters...]");
+    outputln!("                         Show cookies/local/session/indexed storage");
+    outputln!("    storage indexed [--database <name>] [--store <name>] [filters...]");
+    outputln!("                         Show IndexedDB databases, stores, or records");
 }
 
 fn raw_request(client: &mut DevToolsClient, json_text: &str) -> Result<()> {
@@ -1695,6 +1706,235 @@ fn print_evaluation_result(message: &Value) {
     } else {
         outputln!("result: <empty>");
     }
+}
+
+struct StorageColumn {
+    name: String,
+}
+
+struct StorageArguments {
+    storage_type: String,
+    database: Option<String>,
+    store: Option<String>,
+    filters: Vec<String>,
+}
+
+fn storage_value_text(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(value) => value.clone(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        Value::Array(_) | Value::Object(_) => compact_json(value),
+    }
+}
+
+fn truncate_cell(mut value: String) -> String {
+    const MAX_CELL_WIDTH: usize = 80;
+
+    if value.chars().count() <= MAX_CELL_WIDTH {
+        return value;
+    }
+
+    value = value.chars().take(MAX_CELL_WIDTH - 3).collect();
+    value.push_str("...");
+    value
+}
+
+fn storage_columns(response: &Value) -> Result<Vec<StorageColumn>> {
+    let fields = response
+        .get("value")
+        .and_then(Value::as_array)
+        .ok_or("Storage fields response is missing `value`")?;
+
+    Ok(fields
+        .iter()
+        .filter(|field| {
+            !field.get("private").and_then(Value::as_bool).unwrap_or(false)
+                && !field.get("hidden").and_then(Value::as_bool).unwrap_or(false)
+                && !field.get("invisible").and_then(Value::as_bool).unwrap_or(false)
+        })
+        .filter_map(|field| field.get("name").and_then(Value::as_str))
+        .map(|name| StorageColumn { name: name.to_string() })
+        .collect())
+}
+
+fn storage_row_matches(row: &Map<String, Value>, columns: &[StorageColumn], filters: &[String]) -> bool {
+    filters.is_empty()
+        || columns.iter().any(|column| {
+            row.get(&column.name)
+                .map(storage_value_text)
+                .is_some_and(|value| filter_contains(filters, &value))
+        })
+}
+
+fn print_storage_table(columns: &[StorageColumn], response: &Value, filters: &[String]) -> Result<()> {
+    let total = response.get("total").and_then(Value::as_u64).unwrap_or_default();
+    let data = response
+        .get("data")
+        .and_then(Value::as_array)
+        .ok_or("Storage objects response is missing `data`")?;
+
+    let rows = data
+        .iter()
+        .filter_map(Value::as_object)
+        .filter(|row| storage_row_matches(row, columns, filters))
+        .collect::<Vec<_>>();
+
+    if filters.is_empty() {
+        outputln!("items: {total}");
+    } else {
+        outputln!("items: {}/{} matching", rows.len(), total);
+    }
+
+    if columns.is_empty() {
+        outputln!("    <no visible fields>");
+        return Ok(());
+    }
+
+    if rows.is_empty() {
+        outputln!("    <no matching items>");
+        return Ok(());
+    }
+
+    let mut widths = columns.iter().map(|column| column.name.len()).collect::<Vec<_>>();
+    let row_cells = rows
+        .iter()
+        .map(|row| {
+            columns
+                .iter()
+                .enumerate()
+                .map(|(index, column)| {
+                    let value = row
+                        .get(&column.name)
+                        .map(storage_value_text)
+                        .map(truncate_cell)
+                        .unwrap_or_default();
+                    widths[index] = widths[index].max(value.len());
+                    value
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    let header = columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| format!("{:<width$}", column.name, width = widths[index]))
+        .collect::<Vec<_>>()
+        .join("  ");
+    let divider = widths
+        .iter()
+        .map(|width| "-".repeat(*width))
+        .collect::<Vec<_>>()
+        .join("  ");
+
+    outputln!("    {header}");
+    outputln!("    {divider}");
+    for cells in row_cells {
+        let row = cells
+            .iter()
+            .enumerate()
+            .map(|(index, value)| format!("{value:<width$}", width = widths[index]))
+            .collect::<Vec<_>>()
+            .join("  ");
+        outputln!("    {row}");
+    }
+
+    Ok(())
+}
+
+fn parse_storage_arguments(arguments: &str) -> Result<StorageArguments> {
+    let mut tokens = shell_words(arguments)?;
+    if tokens.is_empty() {
+        return Err("storage expects a type: cookies, local, session, or indexed".into());
+    }
+
+    let storage_type = tokens.remove(0);
+    let mut database = None;
+    let mut store = None;
+    let mut filters = Vec::new();
+    let mut index = 0;
+    while index < tokens.len() {
+        match tokens[index].as_str() {
+            "--database" | "-d" => {
+                index += 1;
+                let Some(value) = tokens.get(index) else {
+                    return Err("storage indexed --database expects a value".into());
+                };
+                database = Some(value.clone());
+            }
+            "--store" | "-s" => {
+                index += 1;
+                let Some(value) = tokens.get(index) else {
+                    return Err("storage indexed --store expects a value".into());
+                };
+                store = Some(value.clone());
+            }
+            option if option.starts_with('-') => {
+                return Err(format!("Unrecognized storage option: {option}").into());
+            }
+            filter => filters.push(filter.to_string()),
+        }
+        index += 1;
+    }
+
+    if store.is_some() && database.is_none() {
+        return Err("storage indexed --store requires --database".into());
+    }
+
+    Ok(StorageArguments {
+        storage_type,
+        database,
+        store,
+        filters,
+    })
+}
+
+fn shell_words(arguments: &str) -> Result<Vec<String>> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut chars = arguments.chars().peekable();
+    let mut quote = None;
+
+    while let Some(ch) = chars.next() {
+        if let Some(quote_ch) = quote {
+            if ch == quote_ch {
+                quote = None;
+            } else if ch == '\\' {
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                }
+            } else {
+                current.push(ch);
+            }
+            continue;
+        }
+
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '\\' => {
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                }
+            }
+            ch if ch.is_whitespace() => {
+                if !current.is_empty() {
+                    words.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    if quote.is_some() {
+        return Err("Unterminated quote in storage arguments".into());
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+
+    Ok(words)
 }
 
 fn ensure_no_arguments(arguments: &str, command: &str) -> Result<()> {
@@ -2226,6 +2466,94 @@ fn evaluate_javascript(client: &mut DevToolsClient, text: &str) -> Result<()> {
     }
 }
 
+fn first_host(resource: &Value) -> Result<String> {
+    let hosts = object_member(resource, "hosts")?;
+    hosts
+        .as_object()
+        .and_then(|hosts| hosts.keys().next())
+        .cloned()
+        .ok_or_else(|| "Storage resource did not include any hosts".into())
+}
+
+fn request_storage_fields(
+    client: &mut DevToolsClient,
+    actor: &str,
+    sub_type: Option<&str>,
+) -> Result<Vec<StorageColumn>> {
+    let mut request = json!({
+        "to": actor,
+        "type": "getFields",
+    });
+    if let Some(sub_type) = sub_type {
+        request["subType"] = json!(sub_type);
+    }
+
+    let fields = client.request_for_frame_actor(request)?;
+    storage_columns(&fields)
+}
+
+fn indexed_database_names(database: Option<&str>, store: Option<&str>) -> Value {
+    match (database, store) {
+        (None, None) => Value::Null,
+        (Some(database), None) => json!([compact_json(&json!([database]))]),
+        (Some(database), Some(store)) => json!([compact_json(&json!([database, store]))]),
+        (None, Some(_)) => unreachable!("storage argument parsing rejects --store without --database"),
+    }
+}
+
+fn indexed_database_fields_sub_type(arguments: &StorageArguments) -> Option<&'static str> {
+    if arguments.store.is_some() {
+        Some("object store")
+    } else if arguments.database.is_some() {
+        Some("database")
+    } else {
+        None
+    }
+}
+
+fn storage_command(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
+    let arguments = parse_storage_arguments(arguments)?;
+    let resource_type = match arguments.storage_type.as_str() {
+        "cookies" | "cookie" => "cookies",
+        "local" | "local-storage" => "local-storage",
+        "session" | "session-storage" => "session-storage",
+        "indexed" | "indexed-db" => "indexed-db",
+        _ => return Err("storage type must be cookies, local, session, or indexed".into()),
+    };
+    if resource_type != "indexed-db" && (arguments.database.is_some() || arguments.store.is_some()) {
+        return Err("--database and --store only apply to indexed storage".into());
+    }
+
+    let resource = client.watch_resource(resource_type)?;
+
+    let actor = string_member(&resource, "actor")?;
+    let host = first_host(&resource)?;
+    outputln!("storage: {resource_type} ({host})");
+
+    let fields_sub_type = if resource_type == "indexed-db" {
+        indexed_database_fields_sub_type(&arguments)
+    } else {
+        None
+    };
+    let columns = request_storage_fields(client, &actor, fields_sub_type)?;
+    let names = if resource_type == "indexed-db" {
+        indexed_database_names(arguments.database.as_deref(), arguments.store.as_deref())
+    } else {
+        Value::Null
+    };
+    let objects = client.request_for_frame_actor(json!({
+        "to": actor,
+        "type": "getStoreObjects",
+        "host": host,
+        "names": names,
+        "options": {
+            "sessionString": "Session",
+        },
+    }))?;
+    print_storage_table(&columns, &objects, &arguments.filters)?;
+    Ok(())
+}
+
 fn run_repl(mut client: DevToolsClient) -> Result<()> {
     print_help();
     let command_names = command_names();
@@ -2286,6 +2614,7 @@ fn run_repl(mut client: DevToolsClient) -> Result<()> {
             Some(Command::HighlightGrid) => highlight_grid(&mut client, rest),
             Some(Command::UnhighlightGrid) => unhighlight_grid(&mut client, rest),
             Some(Command::Flex) => inspect_flex(&mut client, rest),
+            Some(Command::Storage) => storage_command(&mut client, rest),
             Some(Command::Raw) => raw_request(&mut client, rest),
             Some(Command::Quit) => break,
             None => Err(format!("Unknown command: {command}").into()),

@@ -96,6 +96,17 @@ Property filters support wildcards, for example `computed border-*`.
 - `flex` prints flexbox data for the selected node.
 
 
+### Storage
+
+- `storage cookies`, `storage local`, `storage session`, and `storage indexed`
+  print storage resources for the selected page as tables. Extra arguments
+  filter the visible row values and support `*` wildcards.
+- `storage indexed --database <name>` lists the object stores in an IndexedDB
+  database.
+- `storage indexed --database <name> --store <name>` prints the records in an
+  IndexedDB object store.
+
+
 ## Smoke Check
 
 A useful manual sequence is:
