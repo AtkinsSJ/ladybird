@@ -75,9 +75,22 @@ struct Options {
 #[derive(Clone, Copy)]
 enum Command {
     Attach,
+    CancelPick,
+    Child,
+    Children,
     Help,
+    Highlight,
+    Html,
+    Next,
+    OuterHtml,
+    Parent,
+    Pick,
+    Previous,
+    Query,
     Quit,
     Raw,
+    Select,
+    Selected,
     Tabs,
 }
 
@@ -92,8 +105,52 @@ const COMMANDS: &[CommandSpec] = &[
         command: Command::Attach,
     },
     CommandSpec {
+        names: &["cancel-pick"],
+        command: Command::CancelPick,
+    },
+    CommandSpec {
+        names: &["child"],
+        command: Command::Child,
+    },
+    CommandSpec {
+        names: &["children"],
+        command: Command::Children,
+    },
+    CommandSpec {
         names: &["help"],
         command: Command::Help,
+    },
+    CommandSpec {
+        names: &["highlight"],
+        command: Command::Highlight,
+    },
+    CommandSpec {
+        names: &["html"],
+        command: Command::Html,
+    },
+    CommandSpec {
+        names: &["next"],
+        command: Command::Next,
+    },
+    CommandSpec {
+        names: &["outer-html"],
+        command: Command::OuterHtml,
+    },
+    CommandSpec {
+        names: &["parent"],
+        command: Command::Parent,
+    },
+    CommandSpec {
+        names: &["pick"],
+        command: Command::Pick,
+    },
+    CommandSpec {
+        names: &["previous", "prev"],
+        command: Command::Previous,
+    },
+    CommandSpec {
+        names: &["query"],
+        command: Command::Query,
     },
     CommandSpec {
         names: &["quit", "q", "exit"],
@@ -102,6 +159,14 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["raw"],
         command: Command::Raw,
+    },
+    CommandSpec {
+        names: &["select"],
+        command: Command::Select,
+    },
+    CommandSpec {
+        names: &["selected"],
+        command: Command::Selected,
     },
     CommandSpec {
         names: &["tabs"],
@@ -1240,6 +1305,21 @@ fn print_help() {
     outputln!("    attach [index]       Attach to a tab");
     outputln!("    raw <json>           Send a raw protocol request and print the response");
     outputln!("    quit                 Exit");
+    outputln!();
+    outputln!("  DOM:");
+    outputln!("    select <selector>    Select and highlight a DOM node");
+    outputln!("    selected             Print the selected node");
+    outputln!("    query <selector>     Print matching DOM nodes");
+    outputln!("    children             List children of the selected node");
+    outputln!("    child <index>        Select a child of the selected node");
+    outputln!("    parent               Select the parent of the selected node");
+    outputln!("    next                 Select the next sibling");
+    outputln!("    previous             Select the previous sibling");
+    outputln!("    html                 Print the selected node's inner HTML");
+    outputln!("    outer-html           Print the selected node's outer HTML");
+    outputln!("    highlight            Highlight the selected node");
+    outputln!("    pick                 Start node picker mode");
+    outputln!("    cancel-pick          Cancel node picker mode");
 }
 
 fn raw_request(client: &mut DevToolsClient, json_text: &str) -> Result<()> {
@@ -1290,6 +1370,201 @@ fn node_label(node: &Value) -> Option<String> {
     })
 }
 
+fn ensure_no_arguments(arguments: &str, command: &str) -> Result<()> {
+    if arguments.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{command} does not take arguments; select a node first").into())
+    }
+}
+
+fn selected_children(client: &mut DevToolsClient) -> Result<Vec<Value>> {
+    let node = client.selected_actor()?;
+    let walker = client.ensure_walker()?;
+    let response = client.request_for_selected_node(json!({
+        "to": walker,
+        "type": "children",
+        "node": node,
+    }))?;
+    Ok(response
+        .get("nodes")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default())
+}
+
+fn print_selected_node(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
+    ensure_no_arguments(arguments, "selected")?;
+    let Some(node) = client.selected_node.as_ref() else {
+        return Err("No selected node; run `select <selector>` first".into());
+    };
+
+    print_node_summary("", &node.node);
+    Ok(())
+}
+
+fn query_nodes(client: &mut DevToolsClient, selector: &str) -> Result<()> {
+    if selector.is_empty() {
+        return Err("query expects a selector".into());
+    }
+
+    let nodes = client.nodes_for_selector(selector)?;
+    if nodes.is_empty() {
+        outputln!("No matching nodes");
+    } else {
+        print_node_list(&nodes);
+    }
+    Ok(())
+}
+
+fn list_children(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
+    ensure_no_arguments(arguments, "children")?;
+    let children = selected_children(client)?;
+    print_node_list(&children);
+    Ok(())
+}
+
+fn select_child(client: &mut DevToolsClient, index_text: &str) -> Result<()> {
+    let index = index_text
+        .parse::<usize>()
+        .map_err(|_| "child expects a zero-based child index")?;
+    let children = selected_children(client)?;
+    let child = children
+        .get(index)
+        .cloned()
+        .ok_or_else(|| format!("No child at index {index}"))?;
+    client.select_node(child)?;
+    outputln!("selected: {}", client.selected_label());
+    Ok(())
+}
+
+fn select_parent(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
+    ensure_no_arguments(arguments, "parent")?;
+    let Some(selected) = client.selected_node.as_ref() else {
+        return Err("No selected node; run `select <selector>` first".into());
+    };
+    let parent_actor = node_parent_actor(&selected.node)
+        .ok_or("Selected node does not have a parent")?
+        .to_string();
+    let parent = client
+        .known_nodes
+        .get(&parent_actor)
+        .cloned()
+        .unwrap_or_else(|| json!({ "actor": parent_actor, "displayName": parent_actor }));
+    client.select_node(parent)?;
+    outputln!("selected: {}", client.selected_label());
+    Ok(())
+}
+
+fn select_sibling(client: &mut DevToolsClient, direction: isize) -> Result<()> {
+    let Some(selected) = client.selected_node.as_ref() else {
+        return Err("No selected node; run `select <selector>` first".into());
+    };
+    let current_actor = selected.actor.clone();
+    let parent_actor = node_parent_actor(&selected.node)
+        .ok_or("Selected node does not have a parent")?
+        .to_string();
+    let walker = client.ensure_walker()?;
+    let response = client.request_for_selected_node(json!({
+        "to": walker,
+        "type": "children",
+        "node": parent_actor,
+    }))?;
+    let siblings = response
+        .get("nodes")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let current_index = siblings
+        .iter()
+        .position(|node| node_actor(node) == Some(current_actor.as_str()))
+        .ok_or("Selected node was not found in its parent")?;
+    let target_index = current_index as isize + direction;
+    if target_index < 0 || target_index >= siblings.len() as isize {
+        return Err("No sibling in that direction".into());
+    }
+    client.select_node(siblings[target_index as usize].clone())?;
+    outputln!("selected: {}", client.selected_label());
+    Ok(())
+}
+
+fn node_html(client: &mut DevToolsClient, arguments: &str, command: &str, request_type: &str) -> Result<()> {
+    ensure_no_arguments(arguments, command)?;
+    let node = client.selected_actor()?;
+    let walker = client.ensure_walker()?;
+    let response = client.request_for_selected_node(json!({
+        "to": walker,
+        "type": request_type,
+        "node": node,
+    }))?;
+    outputln!("{}", response.get("value").and_then(Value::as_str).unwrap_or(""));
+    Ok(())
+}
+
+fn highlight_node(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
+    ensure_no_arguments(arguments, "highlight")?;
+    let node = client.selected_actor()?;
+    let highlighter = client.ensure_highlighter("BoxModelHighlighter")?;
+    client.request_for_selected_node(json!({
+        "to": highlighter,
+        "type": "show",
+        "node": node,
+    }))?;
+    outputln!("highlighted: {}", client.selected_label());
+    Ok(())
+}
+
+fn picker_command(client: &mut DevToolsClient, request_type: &str) -> Result<()> {
+    let walker = client.ensure_walker()?;
+    client.request_for_frame_actor(json!({
+        "to": walker,
+        "type": request_type,
+    }))?;
+
+    if request_type != "pick" {
+        outputln!("picker canceled");
+        return Ok(());
+    }
+
+    outputln!("Picker active. Click a node in Ladybird.");
+    loop {
+        let message = client.read_message()?;
+        let packet_type = message.get("type").and_then(Value::as_str).map(String::from);
+        client.handle_message(message, EventDisplay::Print)?;
+        if let Some("pickerNodePicked" | "pickerNodeCanceled") = packet_type.as_deref() {
+            return Ok(());
+        }
+    }
+}
+
+fn select_node(client: &mut DevToolsClient, selector: &str) -> Result<()> {
+    if selector.is_empty() {
+        return Err("select expects a selector".into());
+    }
+
+    let nodes = client.nodes_for_selector(selector)?;
+    if nodes.is_empty() {
+        return Err(format!("No nodes match `{selector}`").into());
+    }
+
+    let node = if nodes.len() == 1 {
+        nodes[0].clone()
+    } else {
+        print_node_list(&nodes);
+        let Some(index) = prompt_for_index("select index> ", client.color)? else {
+            return Ok(());
+        };
+        nodes
+            .get(index)
+            .cloned()
+            .ok_or_else(|| format!("No matching node at index {index}"))?
+    };
+
+    client.select_node(node)?;
+    outputln!("selected: {}", client.selected_label());
+    Ok(())
+}
+
 fn attach_command(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
     client.update_tabs()?;
 
@@ -1336,6 +1611,25 @@ fn run_repl(mut client: DevToolsClient) -> Result<()> {
             }
             Some(Command::Tabs) => client.refresh_tabs(),
             Some(Command::Attach) => attach_command(&mut client, rest),
+            Some(Command::Select) => select_node(&mut client, rest),
+            Some(Command::Selected) => print_selected_node(&mut client, rest),
+            Some(Command::Query) => query_nodes(&mut client, rest),
+            Some(Command::Children) => list_children(&mut client, rest),
+            Some(Command::Child) => select_child(&mut client, rest),
+            Some(Command::Parent) => select_parent(&mut client, rest),
+            Some(Command::Next) => {
+                ensure_no_arguments(rest, "next")?;
+                select_sibling(&mut client, 1)
+            }
+            Some(Command::Previous) => {
+                ensure_no_arguments(rest, "previous")?;
+                select_sibling(&mut client, -1)
+            }
+            Some(Command::Html) => node_html(&mut client, rest, "html", "innerHTML"),
+            Some(Command::OuterHtml) => node_html(&mut client, rest, "outer-html", "outerHTML"),
+            Some(Command::Highlight) => highlight_node(&mut client, rest),
+            Some(Command::Pick) => picker_command(&mut client, "pick"),
+            Some(Command::CancelPick) => picker_command(&mut client, "cancelPick"),
             Some(Command::Raw) => raw_request(&mut client, rest),
             Some(Command::Quit) => break,
             None => Err(format!("Unknown command: {command}").into()),

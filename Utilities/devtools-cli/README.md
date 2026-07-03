@@ -39,6 +39,20 @@ The prompt shows the selected frame actor and selected DOM node when those are
 known. Command history and command-name completion are available in the REPL.
 
 
+### DOM Selection
+
+- `select <selector>` selects and highlights a DOM node using a CSS selector.
+  When multiple nodes match, the CLI prints a numbered menu and prompts for an
+  index. Escape or Ctrl-C cancels the menu.
+- `query <selector>` prints matching nodes without changing the selection.
+- `selected`, `children`, `child <index>`, `parent`, `next`, and `previous`
+  navigate from the selected node.
+- `html`, `outer-html`, and `highlight` inspect or highlight the selected node.
+- `pick` starts Ladybird picker mode; picking a node selects it in the CLI.
+
+Commands that use a stale node report an error and clear the selection.
+
+
 ## Smoke Check
 
 A useful manual sequence is:
