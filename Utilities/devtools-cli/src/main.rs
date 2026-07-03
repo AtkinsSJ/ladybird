@@ -81,8 +81,11 @@ enum Command {
     Children,
     Computed,
     Eval,
+    Grid,
+    Grids,
     Help,
     Highlight,
+    HighlightGrid,
     Html,
     Next,
     OuterHtml,
@@ -100,6 +103,7 @@ enum Command {
     Stylesheet,
     Stylesheets,
     Tabs,
+    UnhighlightGrid,
 }
 
 struct CommandSpec {
@@ -137,12 +141,24 @@ const COMMANDS: &[CommandSpec] = &[
         command: Command::Eval,
     },
     CommandSpec {
+        names: &["grid"],
+        command: Command::Grid,
+    },
+    CommandSpec {
+        names: &["grids"],
+        command: Command::Grids,
+    },
+    CommandSpec {
         names: &["help"],
         command: Command::Help,
     },
     CommandSpec {
         names: &["highlight"],
         command: Command::Highlight,
+    },
+    CommandSpec {
+        names: &["highlight-grid"],
+        command: Command::HighlightGrid,
     },
     CommandSpec {
         names: &["html"],
@@ -211,6 +227,10 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["tabs"],
         command: Command::Tabs,
+    },
+    CommandSpec {
+        names: &["unhighlight-grid"],
+        command: Command::UnhighlightGrid,
     },
 ];
 
@@ -1376,6 +1396,14 @@ fn print_help() {
     outputln!();
     outputln!("  Console:");
     outputln!("    eval <javascript>    Evaluate JavaScript in the page");
+    outputln!();
+    outputln!("  Grid layout:");
+    outputln!("    grid                 Inspect the selected grid container");
+    outputln!("    grids                List grid containers and select one");
+    outputln!("    highlight-grid [opts] Highlight the selected grid container");
+    outputln!("                         Options: --extend-lines --line-numbers");
+    outputln!("                                  --area-names --track-sizes --color <value>");
+    outputln!("    unhighlight-grid [--all] Hide selected or all grid highlights");
 }
 
 fn raw_request(client: &mut DevToolsClient, json_text: &str) -> Result<()> {
@@ -1607,6 +1635,40 @@ fn print_applied_rules(title: &str, response: &Value, filters: &[String]) {
     }
 }
 
+fn print_layout_object(name: &str, object: Option<&Value>) {
+    let Some(object) = object else {
+        outputln!("No {name}");
+        return;
+    };
+    if object.is_null() {
+        outputln!("No {name}");
+        return;
+    }
+
+    outputln!("{name}:");
+    let Some(fields) = object.as_object() else {
+        outputln!("    {}", compact_json(object));
+        return;
+    };
+
+    let mut entries = fields.iter().collect::<Vec<_>>();
+    entries.sort_by_key(|(name, _)| *name);
+
+    for (key, value) in entries {
+        if value.is_array() || value.is_object() {
+            let size = value
+                .as_array()
+                .map_or_else(|| value.as_object().map_or(0, |object| object.len()), Vec::len);
+            outputln!("    {key}: {size} entries");
+        } else if !value.is_null() {
+            outputln!(
+                "    {key}: {}",
+                value.as_str().map_or_else(|| compact_json(value), String::from)
+            );
+        }
+    }
+}
+
 fn print_evaluation_result(message: &Value) {
     if let Some(exception) = message.get("exception").filter(|exception| !exception.is_null()) {
         outputln!("exception: {}", compact_json(exception));
@@ -1768,6 +1830,171 @@ fn highlight_node(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
         "node": node,
     }))?;
     outputln!("highlighted: {}", client.selected_label());
+    Ok(())
+}
+
+fn parse_grid_highlight_options(arguments: &str) -> Result<Map<String, Value>> {
+    let mut options = Map::new();
+    let mut arguments = arguments.split_whitespace();
+
+    while let Some(argument) = arguments.next() {
+        if argument == "--color" {
+            let Some(color) = arguments.next() else {
+                return Err("highlight-grid --color requires a value".into());
+            };
+            options.insert("color".to_string(), Value::String(color.to_string()));
+            continue;
+        }
+
+        let (name, value) = match argument {
+            "--area-names" => ("showGridAreasOverlay", true),
+            "--no-area-names" => ("showGridAreasOverlay", false),
+            "--line-numbers" => ("showGridLineNumbers", true),
+            "--no-line-numbers" => ("showGridLineNumbers", false),
+            "--extend-lines" => ("showInfiniteLines", true),
+            "--no-extend-lines" => ("showInfiniteLines", false),
+            "--track-sizes" => ("showGridTrackSizes", true),
+            "--no-track-sizes" => ("showGridTrackSizes", false),
+            _ => return Err(format!("Unknown highlight-grid option: {argument}").into()),
+        };
+
+        options.insert(name.to_string(), Value::Bool(value));
+    }
+
+    Ok(options)
+}
+
+fn highlight_grid(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
+    let options = parse_grid_highlight_options(arguments)?;
+    let node = client.selected_actor()?;
+    let highlighter = client.ensure_grid_highlighter(&node)?;
+    let mut request = json!({
+        "to": highlighter,
+        "type": "show",
+        "node": node,
+    });
+    if !options.is_empty() {
+        request["options"] = Value::Object(options);
+    }
+    client.request_for_selected_node(request)?;
+    outputln!("highlighted grid: {}", client.selected_label());
+    Ok(())
+}
+
+fn release_grid_highlighter(client: &mut DevToolsClient, highlighter: String) -> Result<()> {
+    client.request_for_frame_actor(json!({
+        "to": highlighter,
+        "type": "release",
+    }))?;
+    Ok(())
+}
+
+fn unhighlight_grid(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
+    if arguments == "--all" {
+        if client.actors.grid_highlighters.is_empty() {
+            outputln!("No grid highlights");
+            return Ok(());
+        }
+
+        let highlighters = std::mem::take(&mut client.actors.grid_highlighters);
+        let count = highlighters.len();
+        for highlighter in highlighters.into_values() {
+            release_grid_highlighter(client, highlighter)?;
+        }
+        outputln!("hidden {count} grid highlight(s)");
+        return Ok(());
+    }
+
+    if !arguments.is_empty() {
+        return Err("unhighlight-grid only accepts --all".into());
+    }
+
+    let node = client.selected_actor()?;
+    let Some(highlighter) = client.actors.grid_highlighters.remove(&node) else {
+        outputln!("No grid highlight for {}", client.selected_label());
+        return Ok(());
+    };
+
+    release_grid_highlighter(client, highlighter)?;
+    outputln!("grid highlight hidden: {}", client.selected_label());
+    Ok(())
+}
+
+fn inspect_grid(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
+    ensure_no_arguments(arguments, "grid")?;
+    let layout = client.ensure_layout()?;
+    let node = client.selected_actor()?;
+    let response = client.request_for_selected_node(json!({
+        "to": layout,
+        "type": "getCurrentGrid",
+        "node": node,
+    }))?;
+    print_layout_object("grid", response.get("grid"));
+    Ok(())
+}
+
+fn grid_container_node(client: &mut DevToolsClient, grid: &Value) -> Result<Value> {
+    if let Some(container_node_actor) = grid.get("containerNodeActorID").and_then(Value::as_str)
+        && let Some(node) = client.known_nodes.get(container_node_actor)
+    {
+        return Ok(node.clone());
+    }
+
+    let walker = client.ensure_walker()?;
+    let grid_actor = string_member(grid, "actor")?;
+    let response = client.request_for_frame_actor(json!({
+        "to": walker,
+        "type": "getNodeFromActor",
+        "actorID": grid_actor,
+        "path": ["containerEl"],
+    }))?;
+    let disconnected_node = object_member(&response, "node")?;
+    Ok(object_member(disconnected_node, "node")?.clone())
+}
+
+fn list_grids(client: &mut DevToolsClient, arguments: &str) -> Result<Vec<Value>> {
+    ensure_no_arguments(arguments, "grids")?;
+    let layout = client.ensure_layout()?;
+    let root = client.ensure_root_node()?;
+    let response = client.request_for_frame_actor(json!({
+        "to": layout,
+        "type": "getGrids",
+        "rootNode": root,
+    }))?;
+    let grids = response
+        .get("grids")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if grids.is_empty() {
+        outputln!("No grids");
+    } else {
+        for (index, grid) in grids.iter().enumerate() {
+            outputln!("{index}:");
+            print_layout_object("grid", Some(grid));
+        }
+    }
+    Ok(grids)
+}
+
+fn select_grid(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
+    let grids = list_grids(client, arguments)?;
+    if grids.is_empty() {
+        return Ok(());
+    }
+
+    let grid = if grids.len() == 1 {
+        &grids[0]
+    } else {
+        let Some(index) = prompt_for_index("grid index> ", client.color)? else {
+            return Ok(());
+        };
+        grids.get(index).ok_or_else(|| format!("No grid at index {index}"))?
+    };
+
+    let node = grid_container_node(client, grid)?;
+    client.select_node(node)?;
+    outputln!("selected: {}", client.selected_label());
     Ok(())
 }
 
@@ -2032,6 +2259,10 @@ fn run_repl(mut client: DevToolsClient) -> Result<()> {
             Some(Command::Sources) => list_sources(&mut client),
             Some(Command::Source) => source_text(&mut client, rest),
             Some(Command::Eval) => evaluate_javascript(&mut client, rest),
+            Some(Command::Grid) => inspect_grid(&mut client, rest),
+            Some(Command::Grids) => select_grid(&mut client, rest),
+            Some(Command::HighlightGrid) => highlight_grid(&mut client, rest),
+            Some(Command::UnhighlightGrid) => unhighlight_grid(&mut client, rest),
             Some(Command::Raw) => raw_request(&mut client, rest),
             Some(Command::Quit) => break,
             None => Err(format!("Unknown command: {command}").into()),

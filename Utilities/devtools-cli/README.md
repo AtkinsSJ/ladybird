@@ -80,6 +80,17 @@ Property filters support wildcards, for example `computed border-*`.
   result or exception.
 
 
+### Grid Layout
+
+- `grid` prints grid data for the selected node.
+- `grids` lists grid containers and selects one through a numbered menu.
+- `highlight-grid [options]` highlights the selected grid. Supported options:
+  `--extend-lines`, `--line-numbers`, `--area-names`, `--track-sizes`, and
+  `--color <value>`.
+- `unhighlight-grid [--all]` hides the selected grid highlight or all grid
+  highlights.
+
+
 ## Smoke Check
 
 A useful manual sequence is:
@@ -90,4 +101,10 @@ attach
 select #grid
 computed width border-*
 children
+```
+
+```text
+grids
+highlight-grid --line-numbers --color #ff00ff
+unhighlight-grid --all
 ```
