@@ -4373,8 +4373,19 @@ TEST_CASE(console_network_navigation_and_accessibility)
     auto accessibility_button = client.request(accessibility_root, "children"sv).get_array("children"sv)->at(0).as_object().get_string("actor"sv).release_value();
 
     auto walker = get_walker(client, actor_from(target, "inspectorActor"sv));
+    auto walker_actor = actor_from(walker, "actor"sv);
+    auto root_node_actor = walker.get_object("root"sv)->get_string("actor"sv).release_value();
+    auto div_actor = query_selector(client, walker_actor, root_node_actor, "#target"sv);
+
+    JsonObject accessible_from_node;
+    accessible_from_node.set("to"sv, accessibility_walker);
+    accessible_from_node.set("type"sv, "getAccessibleFor"sv);
+    accessible_from_node.set("node"sv, div_actor);
+    auto accessible_response = client.request(move(accessible_from_node));
+    EXPECT_EQ(accessible_response.get_object("accessible"sv)->get_string("actor"sv).value(), accessibility_button);
+
     JsonObject node_from_accessibility;
-    node_from_accessibility.set("to"sv, actor_from(walker, "actor"sv));
+    node_from_accessibility.set("to"sv, walker_actor);
     node_from_accessibility.set("type"sv, "getNodeFromActor"sv);
     node_from_accessibility.set("actorID"sv, accessibility_button);
     JsonArray path;

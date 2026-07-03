@@ -6,6 +6,7 @@
 
 #include <LibDevTools/Actors/AccessibilityNodeActor.h>
 #include <LibDevTools/Actors/AccessibilityWalkerActor.h>
+#include <LibDevTools/Actors/NodeActor.h>
 #include <LibDevTools/Actors/TabActor.h>
 #include <LibDevTools/DevToolsServer.h>
 
@@ -34,6 +35,40 @@ void AccessibilityWalkerActor::handle_message(Message const& message)
 
         JsonObject response;
         response.set("children"sv, move(children));
+        send_response(message, move(response));
+        return;
+    }
+
+    if (message.type == "getAccessibleFor"sv) {
+        auto node = get_required_parameter<String>(message, "node"sv);
+        if (!node.has_value())
+            return;
+
+        auto maybe_actor = devtools().actor_registry().find(*node);
+        if (maybe_actor == devtools().actor_registry().end()) {
+            send_unknown_actor_error(message, *node);
+            return;
+        }
+
+        auto* dom_node_actor = as_if<NodeActor>(maybe_actor->value.ptr());
+        if (!dom_node_actor) {
+            send_unknown_actor_error(message, *node);
+            return;
+        }
+
+        JsonValue accessible;
+        if (auto accessibility_actor = m_node_id_to_actor_map.get(dom_node_actor->node_identifier().id); accessibility_actor.has_value()) {
+            auto accessibility_node = accessibility_node_for(this, *accessibility_actor);
+            if (!accessibility_node.has_value()) {
+                send_unknown_actor_error(message, *accessibility_actor);
+                return;
+            }
+
+            accessible = serialize_node(accessibility_node->node);
+        }
+
+        JsonObject response;
+        response.set("accessible"sv, move(accessible));
         send_response(message, move(response));
         return;
     }
