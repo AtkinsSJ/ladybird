@@ -62,6 +62,12 @@ Commands that use a stale node report an error and clear the selection.
 Property filters support wildcards, for example `computed border-*`.
 
 
+### Style Sheets
+
+- `stylesheets` lists style sheet resources.
+- `stylesheet <id>` prints the text for a style sheet resource.
+
+
 ## Smoke Check
 
 A useful manual sequence is:

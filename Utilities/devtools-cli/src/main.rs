@@ -94,6 +94,8 @@ enum Command {
     Rules,
     Select,
     Selected,
+    Stylesheet,
+    Stylesheets,
     Tabs,
 }
 
@@ -182,6 +184,14 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["selected"],
         command: Command::Selected,
+    },
+    CommandSpec {
+        names: &["stylesheet"],
+        command: Command::Stylesheet,
+    },
+    CommandSpec {
+        names: &["stylesheets"],
+        command: Command::Stylesheets,
     },
     CommandSpec {
         names: &["tabs"],
@@ -1340,6 +1350,10 @@ fn print_help() {
     outputln!("    computed [props...]  Print computed style, optionally filtered");
     outputln!("    rules [props...]     Print applied style rules, optionally filtered");
     outputln!("    box [props...]       Print box model data, optionally filtered");
+    outputln!();
+    outputln!("  Style sheets:");
+    outputln!("    stylesheets          List style sheet resources");
+    outputln!("    stylesheet <id>      Fetch style sheet text by resource id");
 }
 
 fn raw_request(client: &mut DevToolsClient, json_text: &str) -> Result<()> {
@@ -1814,6 +1828,45 @@ fn attach_command(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
     client.attach_tab(index)
 }
 
+fn stylesheet_text(client: &mut DevToolsClient, resource_id: &str) -> Result<()> {
+    let style_sheets = client.ensure_style_sheets()?;
+    let response = client.request_for_frame_actor(json!({
+        "to": style_sheets,
+        "type": "getText",
+        "resourceId": resource_id,
+    }))?;
+    outputln!("{}", response.get("text").and_then(Value::as_str).unwrap_or(""));
+    Ok(())
+}
+
+fn list_stylesheets(client: &mut DevToolsClient) -> Result<()> {
+    client.ensure_style_sheets()?;
+    if client.resources_for_type("stylesheet").is_empty() {
+        client.read_resource("stylesheet")?;
+    }
+
+    let style_sheets = client.resources_for_type("stylesheet");
+    if style_sheets.is_empty() {
+        outputln!("No stylesheets");
+        return Ok(());
+    }
+
+    for style_sheet in style_sheets {
+        let id = style_sheet
+            .get("resourceId")
+            .or_else(|| style_sheet.get("styleSheetId"))
+            .and_then(Value::as_str)
+            .unwrap_or("-");
+        let url = style_sheet
+            .get("href")
+            .or_else(|| style_sheet.get("url"))
+            .and_then(Value::as_str)
+            .unwrap_or("<inline>");
+        outputln!("{id}: {url}");
+    }
+    Ok(())
+}
+
 fn run_repl(mut client: DevToolsClient) -> Result<()> {
     print_help();
     let command_names = command_names();
@@ -1864,6 +1917,8 @@ fn run_repl(mut client: DevToolsClient) -> Result<()> {
             Some(Command::Computed) => style_command(&mut client, rest, "getComputed"),
             Some(Command::Rules) => style_command(&mut client, rest, "getApplied"),
             Some(Command::Box) => style_command(&mut client, rest, "getLayout"),
+            Some(Command::Stylesheets) => list_stylesheets(&mut client),
+            Some(Command::Stylesheet) => stylesheet_text(&mut client, rest),
             Some(Command::Raw) => raw_request(&mut client, rest),
             Some(Command::Quit) => break,
             None => Err(format!("Unknown command: {command}").into()),
