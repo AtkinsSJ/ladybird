@@ -1,0 +1,51 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Ladybird DevTools client manual test</title>
+<style>
+    body {
+        font-family: sans-serif;
+        margin: 2rem;
+    }
+
+    #grid {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 1fr 2fr;
+    }
+
+    #grid > div,
+    #flex > div {
+        border: 1px solid #888;
+        padding: 0.5rem;
+    }
+
+    #flex {
+        display: flex;
+        gap: 8px;
+        margin-top: 1rem;
+    }
+</style>
+<h1 id="heading">Ladybird DevTools client manual test</h1>
+<main id="content">
+    <section id="grid">
+        <div class="cell">Grid A</div>
+        <div class="cell">Grid B</div>
+    </section>
+    <nav id="flex">
+        <div>Flex A</div>
+        <div>Flex B</div>
+    </nav>
+    <button id="mutate">Mutate DOM and storage</button>
+</main>
+<script>
+    localStorage.setItem("ladybird-devtools-local", "local-value");
+    sessionStorage.setItem("ladybird-devtools-session", "session-value");
+    console.log("Ladybird DevTools client test page loaded");
+
+    document.querySelector("#mutate").addEventListener("click", () => {
+        document.querySelector("#heading").textContent = "Mutated";
+        localStorage.setItem("ladybird-devtools-local", String(Date.now()));
+        sessionStorage.setItem("ladybird-devtools-session", String(Date.now()));
+        console.log("Mutation complete");
+    });
+</script>

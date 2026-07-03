@@ -30,6 +30,10 @@ panel, which you may use to view the DOM tree:
 
 <img src="Images/devtools_dom_tree.png" alt="DevTools DOM tree" width="675px" />
 
+For diagnosing page issues without Firefox, Ladybird also provides a command-line DevTools client in
+[`Utilities/devtools-cli`](../Utilities/devtools-cli/README.md). It can connect to a DevTools port, run REPL
+commands for inspecting the current page, and print formatted responses.
+
 ## DevTools protocol
 
 Firefox's documentation of its [DevTools protocol](https://firefox-source-docs.mozilla.org/devtools/backend/protocol.html)

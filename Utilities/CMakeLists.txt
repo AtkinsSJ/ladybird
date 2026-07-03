@@ -8,6 +8,14 @@ endif()
 ladybird_utility(xml SOURCES xml.cpp LIBS LibFileSystem LibMain LibXML LibURL)
 ladybird_utility(dns SOURCES dns.cpp LIBS LibDNS LibMain LibTLS LibCrypto)
 
+build_rust_binary(
+    MANIFEST_PATH devtools-cli/Cargo.toml
+    CRATE_NAME ladybird_devtools_client
+    BINARY_NAME devtools-cli
+    OUTPUT_PATH_VAR LADYBIRD_DEVTOOLS_CLIENT_BINARY
+)
+add_custom_target(devtools-cli DEPENDS "${LADYBIRD_DEVTOOLS_CLIENT_BINARY}")
+
 if (ENABLE_GUI_TARGETS)
     ladybird_utility(image SOURCES image.cpp LIBS LibGfx LibImageDecoders LibMain)
 endif()

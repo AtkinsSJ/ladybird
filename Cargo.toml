@@ -10,6 +10,7 @@ members = [
     "Libraries/LibWeb/ContentBlocker/Rust",
     "Libraries/LibWeb/Rust",
     "Libraries/LibWeb/HTML/Parser/Rust",
+    "Utilities/devtools-cli",
 ]
 exclude = [
     "Libraries/LibJS/AsmIntGen",
