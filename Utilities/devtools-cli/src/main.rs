@@ -94,6 +94,8 @@ enum Command {
     Rules,
     Select,
     Selected,
+    Source,
+    Sources,
     Stylesheet,
     Stylesheets,
     Tabs,
@@ -184,6 +186,14 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["selected"],
         command: Command::Selected,
+    },
+    CommandSpec {
+        names: &["source"],
+        command: Command::Source,
+    },
+    CommandSpec {
+        names: &["sources"],
+        command: Command::Sources,
     },
     CommandSpec {
         names: &["stylesheet"],
@@ -1354,6 +1364,10 @@ fn print_help() {
     outputln!("  Style sheets:");
     outputln!("    stylesheets          List style sheet resources");
     outputln!("    stylesheet <id>      Fetch style sheet text by resource id");
+    outputln!();
+    outputln!("  JavaScript sources:");
+    outputln!("    sources              List JavaScript sources");
+    outputln!("    source <index|actor> Fetch JavaScript source text");
 }
 
 fn raw_request(client: &mut DevToolsClient, json_text: &str) -> Result<()> {
@@ -1867,6 +1881,51 @@ fn list_stylesheets(client: &mut DevToolsClient) -> Result<()> {
     Ok(())
 }
 
+fn list_sources(client: &mut DevToolsClient) -> Result<()> {
+    let thread = client.ensure_thread()?;
+    let response = client.request_for_frame_actor(json!({
+        "to": thread,
+        "type": "sources",
+    }))?;
+    client.sources = response
+        .get("sources")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if client.sources.is_empty() {
+        outputln!("No JavaScript sources");
+    } else {
+        for (index, source) in client.sources.iter().enumerate() {
+            let actor = source.get("actor").and_then(Value::as_str).unwrap_or("-");
+            let url = source.get("url").and_then(Value::as_str).unwrap_or("<inline>");
+            let length = source.get("sourceLength").and_then(Value::as_i64).unwrap_or_default();
+            outputln!("{index}: {actor} {url} ({length} bytes)");
+        }
+    }
+    Ok(())
+}
+
+fn source_text(client: &mut DevToolsClient, id: &str) -> Result<()> {
+    let actor = if let Ok(index) = id.parse::<usize>() {
+        client
+            .sources
+            .get(index)
+            .and_then(|source| source.get("actor"))
+            .and_then(Value::as_str)
+            .map(String::from)
+            .ok_or_else(|| format!("No source at index {index}"))?
+    } else {
+        id.to_string()
+    };
+
+    let response = client.request_for_frame_actor(json!({
+        "to": actor,
+        "type": "source",
+    }))?;
+    outputln!("{}", response.get("source").and_then(Value::as_str).unwrap_or(""));
+    Ok(())
+}
+
 fn run_repl(mut client: DevToolsClient) -> Result<()> {
     print_help();
     let command_names = command_names();
@@ -1919,6 +1978,8 @@ fn run_repl(mut client: DevToolsClient) -> Result<()> {
             Some(Command::Box) => style_command(&mut client, rest, "getLayout"),
             Some(Command::Stylesheets) => list_stylesheets(&mut client),
             Some(Command::Stylesheet) => stylesheet_text(&mut client, rest),
+            Some(Command::Sources) => list_sources(&mut client),
+            Some(Command::Source) => source_text(&mut client, rest),
             Some(Command::Raw) => raw_request(&mut client, rest),
             Some(Command::Quit) => break,
             None => Err(format!("Unknown command: {command}").into()),

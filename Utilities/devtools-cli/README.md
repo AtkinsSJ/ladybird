@@ -68,6 +68,12 @@ Property filters support wildcards, for example `computed border-*`.
 - `stylesheet <id>` prints the text for a style sheet resource.
 
 
+### JavaScript Sources
+
+- `sources` lists JavaScript sources known to the selected frame.
+- `source <index|actor>` prints source text by list index or source actor.
+
+
 ## Smoke Check
 
 A useful manual sequence is:
