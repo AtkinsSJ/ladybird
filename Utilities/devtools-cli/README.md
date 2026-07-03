@@ -53,6 +53,15 @@ known. Command history and command-name completion are available in the REPL.
 Commands that use a stale node report an error and clear the selection.
 
 
+### Style And Box Model
+
+- `computed [props...]` prints computed style for the selected node.
+- `rules [props...]` prints applied style rules for the selected node.
+- `box [props...]` prints box-model data for the selected node.
+
+Property filters support wildcards, for example `computed border-*`.
+
+
 ## Smoke Check
 
 A useful manual sequence is:

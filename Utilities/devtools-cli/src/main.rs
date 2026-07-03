@@ -75,9 +75,11 @@ struct Options {
 #[derive(Clone, Copy)]
 enum Command {
     Attach,
+    Box,
     CancelPick,
     Child,
     Children,
+    Computed,
     Help,
     Highlight,
     Html,
@@ -89,6 +91,7 @@ enum Command {
     Query,
     Quit,
     Raw,
+    Rules,
     Select,
     Selected,
     Tabs,
@@ -105,6 +108,10 @@ const COMMANDS: &[CommandSpec] = &[
         command: Command::Attach,
     },
     CommandSpec {
+        names: &["box"],
+        command: Command::Box,
+    },
+    CommandSpec {
         names: &["cancel-pick"],
         command: Command::CancelPick,
     },
@@ -115,6 +122,10 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["children"],
         command: Command::Children,
+    },
+    CommandSpec {
+        names: &["computed"],
+        command: Command::Computed,
     },
     CommandSpec {
         names: &["help"],
@@ -159,6 +170,10 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["raw"],
         command: Command::Raw,
+    },
+    CommandSpec {
+        names: &["rules"],
+        command: Command::Rules,
     },
     CommandSpec {
         names: &["select"],
@@ -1320,6 +1335,11 @@ fn print_help() {
     outputln!("    highlight            Highlight the selected node");
     outputln!("    pick                 Start node picker mode");
     outputln!("    cancel-pick          Cancel node picker mode");
+    outputln!();
+    outputln!("  Style and box model:");
+    outputln!("    computed [props...]  Print computed style, optionally filtered");
+    outputln!("    rules [props...]     Print applied style rules, optionally filtered");
+    outputln!("    box [props...]       Print box model data, optionally filtered");
 }
 
 fn raw_request(client: &mut DevToolsClient, json_text: &str) -> Result<()> {
@@ -1368,6 +1388,187 @@ fn node_label(node: &Value) -> Option<String> {
         }
         _ => name.to_string(),
     })
+}
+
+fn wildcard_matches(pattern: &str, text: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let text = text.as_bytes();
+    let mut pattern_index = 0;
+    let mut text_index = 0;
+    let mut star_index = None;
+    let mut star_text_index = 0;
+
+    while text_index < text.len() {
+        if pattern_index < pattern.len() && pattern[pattern_index] == text[text_index] {
+            pattern_index += 1;
+            text_index += 1;
+        } else if pattern_index < pattern.len() && pattern[pattern_index] == b'*' {
+            star_index = Some(pattern_index);
+            pattern_index += 1;
+            star_text_index = text_index;
+        } else if let Some(previous_star_index) = star_index {
+            pattern_index = previous_star_index + 1;
+            star_text_index += 1;
+            text_index = star_text_index;
+        } else {
+            return false;
+        }
+    }
+
+    while pattern_index < pattern.len() && pattern[pattern_index] == b'*' {
+        pattern_index += 1;
+    }
+
+    pattern_index == pattern.len()
+}
+
+fn filter_contains(filters: &[String], name: &str) -> bool {
+    filters.is_empty() || filters.iter().any(|filter| wildcard_matches(filter, name))
+}
+
+fn split_filters(text: &str) -> Vec<String> {
+    text.split_whitespace().map(String::from).collect()
+}
+
+fn css_property_value(value: &Value) -> Option<String> {
+    if let Some(object) = value.as_object() {
+        return object
+            .get("value")
+            .and_then(Value::as_str)
+            .map(String::from)
+            .or_else(|| object.get("value").map(compact_json));
+    }
+
+    value.as_str().map(String::from).or_else(|| Some(compact_json(value)))
+}
+
+fn print_property_block(title: &str, properties: &Value, filters: &[String]) {
+    outputln!("{title}:");
+    let Some(object) = properties.as_object() else {
+        outputln!("    <no properties>");
+        return;
+    };
+
+    let mut entries = object.iter().collect::<Vec<_>>();
+    entries.sort_by_key(|(name, _)| *name);
+
+    let mut printed = 0;
+    for (name, value) in entries {
+        if name == "from" {
+            continue;
+        }
+        if !filter_contains(filters, name) {
+            continue;
+        }
+
+        if let Some(value) = css_property_value(value) {
+            outputln!("    {name}: {value};");
+            printed += 1;
+        }
+    }
+
+    if printed == 0 {
+        outputln!("    <no matching properties>");
+    }
+}
+
+fn declaration_name(declaration: &Value) -> Option<&str> {
+    declaration.get("name").and_then(Value::as_str)
+}
+
+fn print_declaration(declaration: &Value) {
+    let name = declaration_name(declaration).unwrap_or("<unknown>");
+    let value = declaration.get("value").and_then(Value::as_str).unwrap_or("");
+    let priority = declaration.get("priority").and_then(Value::as_str).unwrap_or("");
+    let valid = declaration.get("isValid").and_then(Value::as_bool).unwrap_or(true);
+
+    if priority.is_empty() {
+        outputln!("        {name}: {value};{}", if valid { "" } else { " /* invalid */" });
+    } else {
+        outputln!(
+            "        {name}: {value} !{priority};{}",
+            if valid { "" } else { " /* invalid */" }
+        );
+    }
+}
+
+fn print_rule_header(entry: &Value) {
+    let Some(rule) = entry.get("rule") else {
+        outputln!("    <missing rule>");
+        return;
+    };
+
+    let selectors = rule
+        .get("selectors")
+        .and_then(Value::as_array)
+        .map(|selectors| {
+            selectors
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .filter(|selectors| !selectors.is_empty())
+        .or_else(|| rule.get("authoredText").and_then(Value::as_str).map(String::from))
+        .unwrap_or_else(|| "<inline style>".to_string());
+
+    let system = if entry.get("isSystem").and_then(Value::as_bool).unwrap_or(false) {
+        " [user-agent]"
+    } else {
+        ""
+    };
+
+    let source = match (
+        rule.get("parentStyleSheet").and_then(Value::as_str),
+        rule.get("line").and_then(Value::as_i64),
+        rule.get("column").and_then(Value::as_i64),
+    ) {
+        (Some(sheet), Some(line), Some(column)) => format!(" ({sheet}:{line}:{column})"),
+        _ => String::new(),
+    };
+
+    outputln!("    {selectors}{system}{source}");
+}
+
+fn print_applied_rules(title: &str, response: &Value, filters: &[String]) {
+    outputln!("{title}:");
+    let Some(entries) = response.get("entries").and_then(Value::as_array) else {
+        outputln!("    <no applied rules>");
+        return;
+    };
+
+    if entries.is_empty() {
+        outputln!("    <no applied rules>");
+        return;
+    }
+
+    for entry in entries {
+        print_rule_header(entry);
+
+        let declarations = entry
+            .get("rule")
+            .and_then(|rule| rule.get("declarations"))
+            .and_then(Value::as_array);
+        let Some(declarations) = declarations else {
+            continue;
+        };
+
+        let mut printed = 0;
+        for declaration in declarations {
+            let Some(name) = declaration_name(declaration) else {
+                continue;
+            };
+            if !filter_contains(filters, name) {
+                continue;
+            }
+            print_declaration(declaration);
+            printed += 1;
+        }
+
+        if printed == 0 && !filters.is_empty() {
+            outputln!("        <no matching declarations>");
+        }
+    }
 }
 
 fn ensure_no_arguments(arguments: &str, command: &str) -> Result<()> {
@@ -1537,6 +1738,36 @@ fn picker_command(client: &mut DevToolsClient, request_type: &str) -> Result<()>
     }
 }
 
+fn style_command(client: &mut DevToolsClient, arguments: &str, request_type: &str) -> Result<()> {
+    let filters = split_filters(arguments);
+    let node = client.selected_actor()?;
+    let page_style = client.ensure_page_style()?;
+    let mut request = json!({
+        "to": page_style,
+        "type": request_type,
+        "node": node,
+    });
+
+    if request_type == "getApplied" {
+        request["inherited"] = json!(true);
+        request["matchedSelectors"] = json!(true);
+    }
+
+    let response = client.request_for_selected_node(request)?;
+    match request_type {
+        "getComputed" => {
+            let computed = response
+                .get("computed")
+                .ok_or("Computed style response is missing `computed`")?;
+            print_property_block(&client.selected_label(), computed, &filters);
+        }
+        "getLayout" => print_property_block(&client.selected_label(), &response, &filters),
+        "getApplied" => print_applied_rules(&client.selected_label(), &response, &filters),
+        _ => client.print_json(&response),
+    }
+    Ok(())
+}
+
 fn select_node(client: &mut DevToolsClient, selector: &str) -> Result<()> {
     if selector.is_empty() {
         return Err("select expects a selector".into());
@@ -1630,6 +1861,9 @@ fn run_repl(mut client: DevToolsClient) -> Result<()> {
             Some(Command::Highlight) => highlight_node(&mut client, rest),
             Some(Command::Pick) => picker_command(&mut client, "pick"),
             Some(Command::CancelPick) => picker_command(&mut client, "cancelPick"),
+            Some(Command::Computed) => style_command(&mut client, rest, "getComputed"),
+            Some(Command::Rules) => style_command(&mut client, rest, "getApplied"),
+            Some(Command::Box) => style_command(&mut client, rest, "getLayout"),
             Some(Command::Raw) => raw_request(&mut client, rest),
             Some(Command::Quit) => break,
             None => Err(format!("Unknown command: {command}").into()),
