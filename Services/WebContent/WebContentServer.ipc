@@ -102,6 +102,8 @@ endpoint WebContentServer
     inspect_accessibility_tree(u64 page_id) =|
     get_hovered_node_id(u64 page_id) =|
     get_node_id_at_position(u64 page_id, u64 request_id, Web::DevicePixelPoint position) =|
+    query_selector(u64 page_id, u64 request_id, Web::UniqueNodeID node_id, String selector) =|
+    query_selector_all(u64 page_id, u64 request_id, Web::UniqueNodeID node_id, String selector) =|
 
     js_console_input(u64 page_id, String js_source) =|
     run_javascript(u64 page_id, String js_source) =|

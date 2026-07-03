@@ -2274,6 +2274,28 @@ void Application::inspect_dom_node(DevTools::TabDescription const& description, 
     view->inspect_dom_node(node_id, property_type, pseudo_element, JsonValue { move(options) });
 }
 
+void Application::query_selector(DevTools::TabDescription const& description, Web::UniqueNodeID node_id, String const& selector, OnDOMNodeQuerySelectorComplete on_complete) const
+{
+    auto view = ViewImplementation::find_view_by_id(description.id);
+    if (!view.has_value()) {
+        on_complete(Optional<Web::UniqueNodeID> {});
+        return;
+    }
+
+    view->query_selector(node_id, selector, move(on_complete));
+}
+
+void Application::query_selector_all(DevTools::TabDescription const& description, Web::UniqueNodeID node_id, String const& selector, OnDOMNodeQuerySelectorAllComplete on_complete) const
+{
+    auto view = ViewImplementation::find_view_by_id(description.id);
+    if (!view.has_value()) {
+        on_complete(Vector<Web::UniqueNodeID> {});
+        return;
+    }
+
+    view->query_selector_all(node_id, selector, move(on_complete));
+}
+
 void Application::inspect_grid_layouts(DevTools::TabDescription const& description, Web::UniqueNodeID root_node_id, OnGridLayoutsReceived on_grid_layouts_received) const
 {
     auto view = ViewImplementation::find_view_by_id(description.id);

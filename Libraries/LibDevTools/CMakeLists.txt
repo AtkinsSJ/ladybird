@@ -15,6 +15,7 @@ set(SOURCES
     Actors/NetworkEventActor.cpp
     Actors/NetworkParentActor.cpp
     Actors/NodeActor.cpp
+    Actors/NodeListActor.cpp
     Actors/PageStyleActor.cpp
     Actors/ParentAccessibilityActor.cpp
     Actors/PreferenceActor.cpp

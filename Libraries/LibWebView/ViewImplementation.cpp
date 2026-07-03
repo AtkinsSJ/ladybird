@@ -842,6 +842,20 @@ void ViewImplementation::get_hovered_node_id()
     client().async_get_hovered_node_id(page_id());
 }
 
+void ViewImplementation::query_selector(Web::UniqueNodeID node_id, String const& selector, DevTools::DevToolsDelegate::OnDOMNodeQuerySelectorComplete on_complete)
+{
+    auto request_id = m_next_query_selector_request_id++;
+    m_pending_query_selector_requests.set(request_id, move(on_complete));
+    client().async_query_selector(page_id(), request_id, node_id, selector);
+}
+
+void ViewImplementation::query_selector_all(Web::UniqueNodeID node_id, String const& selector, DevTools::DevToolsDelegate::OnDOMNodeQuerySelectorAllComplete on_complete)
+{
+    auto request_id = m_next_query_selector_request_id++;
+    m_pending_query_selector_all_requests.set(request_id, move(on_complete));
+    client().async_query_selector_all(page_id(), request_id, node_id, selector);
+}
+
 void ViewImplementation::start_node_picker(DevTools::DevToolsDelegate::OnNodePickerEvent on_node_picker_event)
 {
     m_node_picker_active = true;
@@ -944,6 +958,34 @@ void ViewImplementation::did_receive_node_picker_hit_test(u64 request_id, Web::U
         .type = event_type,
         .node_id = node_id,
     });
+}
+
+void ViewImplementation::did_query_selector(u64 request_id, Optional<Web::UniqueNodeID> node_id, Optional<String> error)
+{
+    auto on_complete = m_pending_query_selector_requests.take(request_id);
+    if (!on_complete.has_value())
+        return;
+
+    if (error.has_value()) {
+        (*on_complete)(Error::from_string_literal("Invalid selector"));
+        return;
+    }
+
+    (*on_complete)(node_id);
+}
+
+void ViewImplementation::did_query_selector_all(u64 request_id, Vector<Web::UniqueNodeID> node_ids, Optional<String> error)
+{
+    auto on_complete = m_pending_query_selector_all_requests.take(request_id);
+    if (!on_complete.has_value())
+        return;
+
+    if (error.has_value()) {
+        (*on_complete)(Error::from_string_literal("Invalid selector"));
+        return;
+    }
+
+    (*on_complete)(move(node_ids));
 }
 
 void ViewImplementation::inspect_dom_node(Web::UniqueNodeID node_id, DOMNodeProperties::Type property_type, Optional<Web::CSS::PseudoElement> pseudo_element, JsonValue options)

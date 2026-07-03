@@ -29,6 +29,7 @@ class LayoutInspectorActor;
 class NetworkEventActor;
 class NetworkParentActor;
 class NodeActor;
+class NodeListActor;
 class PageStyleActor;
 class ParentAccessibilityActor;
 class PreferenceActor;

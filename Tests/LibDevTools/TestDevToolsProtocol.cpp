@@ -170,6 +170,94 @@ static JsonObject make_navigation_dom_tree()
     return document;
 }
 
+static Optional<JsonObject const&> find_node_by_id(JsonObject const& node, Web::UniqueNodeID node_id)
+{
+    if (node.get_integer<Web::UniqueNodeID::Type>("id"sv) == node_id.value())
+        return node;
+
+    if (auto children = node.get_array("children"sv); children.has_value()) {
+        for (auto const& child : children->values()) {
+            if (!child.is_object())
+                continue;
+
+            if (auto result = find_node_by_id(child.as_object(), node_id); result.has_value())
+                return result;
+        }
+    }
+
+    return {};
+}
+
+static bool node_matches_test_selector(JsonObject const& node, StringView selector)
+{
+    if (selector == "*"sv)
+        return node.get_string("type"sv).map([](auto const& type) { return type.equals_ignoring_ascii_case("element"sv); }).value_or(false);
+
+    if (selector.starts_with('#')) {
+        auto attributes = node.get_object("attributes"sv);
+        if (!attributes.has_value())
+            return false;
+
+        auto id = attributes->get_string("id"sv);
+        return id.has_value() && id->bytes_as_string_view() == selector.substring_view(1);
+    }
+
+    if (selector.starts_with('.')) {
+        auto attributes = node.get_object("attributes"sv);
+        if (!attributes.has_value())
+            return false;
+
+        auto class_name = attributes->get_string("class"sv);
+        if (!class_name.has_value())
+            return false;
+        for (auto part : class_name->bytes_as_string_view().split_view(' ')) {
+            if (part == selector.substring_view(1))
+                return true;
+        }
+        return false;
+    }
+
+    return node.get_string("name"sv)->equals_ignoring_ascii_case(selector);
+}
+
+static bool is_invalid_test_selector(StringView selector)
+{
+    return selector == "["sv;
+}
+
+static Optional<Web::UniqueNodeID> find_matching_node_id(JsonObject const& node, StringView selector)
+{
+    if (node_matches_test_selector(node, selector))
+        return Web::UniqueNodeID { node.get_integer<Web::UniqueNodeID::Type>("id"sv).value() };
+
+    if (auto children = node.get_array("children"sv); children.has_value()) {
+        for (auto const& child : children->values()) {
+            if (!child.is_object())
+                continue;
+
+            if (auto result = find_matching_node_id(child.as_object(), selector); result.has_value())
+                return result;
+        }
+    }
+
+    return {};
+}
+
+static void find_all_matching_node_ids(JsonObject const& node, StringView selector, Vector<Web::UniqueNodeID>& node_ids)
+{
+    if (node_matches_test_selector(node, selector))
+        node_ids.append(Web::UniqueNodeID { node.get_integer<Web::UniqueNodeID::Type>("id"sv).value() });
+
+    if (auto children = node.get_array("children"sv); children.has_value()) {
+        for (auto const& child : children->values()) {
+            if (!child.is_object())
+                continue;
+
+            find_all_matching_node_ids(child.as_object(), selector, node_ids);
+        }
+    }
+}
+
 static JsonObject make_accessibility_tree()
 {
     JsonObject button = make_node(4, "element"sv, "Target button"sv);
@@ -923,6 +1011,42 @@ public:
             else
                 on_dom_node_properties(make_used_fonts());
         });
+    }
+
+    virtual void query_selector(DevTools::TabDescription const&, Web::UniqueNodeID node_id, String const& selector, OnDOMNodeQuerySelectorComplete callback) const override
+    {
+        if (is_invalid_test_selector(selector)) {
+            callback(Error::from_string_literal("Invalid selector"));
+            return;
+        }
+
+        auto dom_tree = use_navigation_dom_tree ? make_navigation_dom_tree() : make_dom_tree();
+        auto ancestor = find_node_by_id(dom_tree, node_id);
+        if (!ancestor.has_value()) {
+            callback(Optional<Web::UniqueNodeID> {});
+            return;
+        }
+
+        callback(find_matching_node_id(*ancestor, selector));
+    }
+
+    virtual void query_selector_all(DevTools::TabDescription const&, Web::UniqueNodeID node_id, String const& selector, OnDOMNodeQuerySelectorAllComplete callback) const override
+    {
+        if (is_invalid_test_selector(selector)) {
+            callback(Error::from_string_literal("Invalid selector"));
+            return;
+        }
+
+        auto dom_tree = use_navigation_dom_tree ? make_navigation_dom_tree() : make_dom_tree();
+        auto ancestor = find_node_by_id(dom_tree, node_id);
+        if (!ancestor.has_value()) {
+            callback(Vector<Web::UniqueNodeID> {});
+            return;
+        }
+
+        Vector<Web::UniqueNodeID> node_ids;
+        find_all_matching_node_ids(*ancestor, selector, node_ids);
+        callback(move(node_ids));
     }
 
     virtual void clear_inspected_dom_node(DevTools::TabDescription const&) const override { ++clear_inspected_dom_node_call_count; }
@@ -1758,6 +1882,34 @@ static String query_selector(ProtocolClient& client, StringView walker_actor, St
     request.set("node"sv, root_node);
     request.set("selector"sv, selector);
     return client.request(move(request)).get_object("node"sv)->get_string("actor"sv).release_value();
+}
+
+static JsonArray query_selector_all(ProtocolClient& client, StringView walker_actor, StringView root_node, StringView selector)
+{
+    JsonObject request;
+    request.set("to"sv, walker_actor);
+    request.set("type"sv, "querySelectorAll"sv);
+    request.set("node"sv, root_node);
+    request.set("selector"sv, selector);
+
+    auto list = client.request(move(request)).get_object("list"sv).release_value();
+    auto list_actor = list.get_string("actor"sv).release_value();
+    auto length = list.get_integer<size_t>("length"sv).release_value();
+
+    JsonObject items;
+    items.set("to"sv, list_actor);
+    items.set("type"sv, "items"sv);
+    items.set("start"sv, 0);
+    items.set("end"sv, length);
+
+    auto nodes = client.request(move(items)).get_array("nodes"sv).release_value();
+
+    JsonObject release;
+    release.set("to"sv, list_actor);
+    release.set("type"sv, "release"sv);
+    (void)client.request(move(release));
+
+    return nodes;
 }
 
 static JsonObject read_resource(ProtocolClient& client, StringView resource_type, StringView packet_type = "resources-available-array"sv, StringView expected_sender = {})
@@ -3448,6 +3600,42 @@ TEST_CASE(walker_node_picker)
     children.set("type"sv, "children"sv);
     children.set("node"sv, root_node_actor);
     EXPECT_EQ(client.request(move(children)).get_array("nodes"sv)->size(), 1u);
+}
+
+TEST_CASE(inspector_walker_query_selector_supports_css_selectors)
+{
+    auto session = create_session();
+    auto& client = *session->client;
+    (void)client.read_message();
+
+    auto target = get_frame_target(client, actor_from(get_tab(client), "actor"sv));
+    auto inspector_actor = actor_from(target, "inspectorActor"sv);
+    auto walker = get_walker(client, inspector_actor);
+    auto walker_actor = actor_from(walker, "actor"sv);
+    auto root_node_actor = walker.get_object("root"sv)->get_string("actor"sv).release_value();
+
+    auto div_actor = query_selector(client, walker_actor, root_node_actor, "div"sv);
+    EXPECT_EQ(query_selector(client, walker_actor, root_node_actor, "#target"sv), div_actor);
+    EXPECT_EQ(query_selector(client, walker_actor, root_node_actor, ".fixture"sv), div_actor);
+
+    auto matching_nodes = query_selector_all(client, walker_actor, root_node_actor, "*"sv);
+    EXPECT_EQ(matching_nodes.size(), 8u);
+    EXPECT_EQ(matching_nodes.at(0).as_object().get_string("displayName"sv).release_value(), "html"sv);
+    EXPECT_EQ(matching_nodes.at(3).as_object().get_string("actor"sv).release_value(), div_actor);
+
+    JsonObject invalid_query_selector;
+    invalid_query_selector.set("to"sv, walker_actor);
+    invalid_query_selector.set("type"sv, "querySelector"sv);
+    invalid_query_selector.set("node"sv, root_node_actor);
+    invalid_query_selector.set("selector"sv, "["sv);
+    EXPECT_EQ(client.request(move(invalid_query_selector)).get_string("error"sv).value(), "invalidSelector"sv);
+
+    JsonObject invalid_query_selector_all;
+    invalid_query_selector_all.set("to"sv, walker_actor);
+    invalid_query_selector_all.set("type"sv, "querySelectorAll"sv);
+    invalid_query_selector_all.set("node"sv, root_node_actor);
+    invalid_query_selector_all.set("selector"sv, "["sv);
+    EXPECT_EQ(client.request(move(invalid_query_selector_all)).get_string("error"sv).value(), "invalidSelector"sv);
 }
 
 TEST_CASE(inspector_walker_navigation_reloads_root)

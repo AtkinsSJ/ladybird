@@ -29,6 +29,9 @@ public:
 
     static bool is_suitable_for_dom_inspection(JsonValue const&);
     JsonValue serialize_root() const;
+    JsonValue serialize_node(JsonObject const&) const;
+    JsonObject serialize_disconnected_node(JsonObject const&) const;
+    Optional<JsonObject const&> node_for_id(Web::UniqueNodeID) const;
 
     static Optional<Node> dom_node_for(WeakPtr<WalkerActor> const&, StringView actor);
     Optional<Node> dom_node(StringView actor);
@@ -40,9 +43,6 @@ private:
     WalkerActor(DevToolsServer&, String name, WeakPtr<TabActor>, JsonObject dom_tree);
 
     virtual void handle_message(Message const&) override;
-
-    JsonValue serialize_node(JsonObject const&) const;
-    Optional<JsonObject const&> find_node_by_selector(JsonObject const& node, StringView selector);
 
     Optional<JsonObject const&> previous_sibling_for_node(JsonObject const& node);
     Optional<JsonObject const&> next_sibling_for_node(JsonObject const& node);
@@ -63,7 +63,6 @@ private:
     void handle_node_picker_event(DevToolsDelegate::NodePickerEvent);
     void stop_node_picker();
     Optional<JsonObject const&> element_node_for_picker_node(JsonObject const&) const;
-    JsonObject serialize_disconnected_node(JsonObject const&) const;
 
     WeakPtr<TabActor> m_tab;
     WeakPtr<LayoutInspectorActor> m_layout_inspector;

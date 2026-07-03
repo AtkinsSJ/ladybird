@@ -8,6 +8,7 @@
 #include <AK/StringUtils.h>
 #include <LibDevTools/Actors/AccessibilityNodeActor.h>
 #include <LibDevTools/Actors/LayoutInspectorActor.h>
+#include <LibDevTools/Actors/NodeListActor.h>
 #include <LibDevTools/Actors/TabActor.h>
 #include <LibDevTools/Actors/WalkerActor.h>
 #include <LibDevTools/DevToolsDelegate.h>
@@ -439,19 +440,96 @@ void WalkerActor::handle_message(Message const& message)
             return;
         }
 
-        if (auto selected_node = find_node_by_selector(ancestor_node->node, *selector); selected_node.has_value()) {
-            response.set("node"sv, serialize_node(*selected_node));
+        auto ancestor_node_id = ancestor_node->identifier.id;
+        devtools().delegate().query_selector(ancestor_node->tab->description(), ancestor_node_id, *selector,
+            [weak_self = make_weak_ptr<WalkerActor>(), message_id = message.id, ancestor_node_id](auto node_id_or_error) mutable {
+                auto self = weak_self.strong_ref();
+                if (!self)
+                    return;
 
-            if (auto parent = m_dom_node_to_parent_map.get(&selected_node.value()); parent.value() && parent.value() != &ancestor_node->node) {
-                // FIXME: Should this be a stack of nodes leading to `ancestor_node`?
-                JsonArray new_parents;
-                new_parents.must_append(serialize_node(*parent.value()));
+                JsonObject response;
+                if (node_id_or_error.is_error()) {
+                    response.set("error"sv, "invalidSelector"sv);
+                    response.set("message"sv, MUST(String::formatted("{}", node_id_or_error.error())));
+                    self->send_response({ .id = message_id }, move(response));
+                    return;
+                }
 
-                response.set("newParents"sv, move(new_parents));
-            }
+                auto node_id = node_id_or_error.release_value();
+                if (!node_id.has_value()) {
+                    self->send_response({ .id = message_id }, move(response));
+                    return;
+                }
+
+                auto selected_node = self->node_for_id(*node_id);
+                if (!selected_node.has_value()) {
+                    self->send_response({ .id = message_id }, move(response));
+                    return;
+                }
+
+                response.set("node"sv, self->serialize_node(*selected_node));
+
+                if (auto parent = self->m_dom_node_to_parent_map.get(&selected_node.value()); parent.value()) {
+                    auto parent_id = parent.value()->template get_integer<Web::UniqueNodeID::Type>("id"sv);
+                    if (parent_id.has_value() && Web::UniqueNodeID(*parent_id) != ancestor_node_id) {
+                        // FIXME: Should this be a stack of nodes leading to `ancestor_node_id`?
+                        JsonArray new_parents;
+                        new_parents.must_append(self->serialize_node(*parent.value()));
+
+                        response.set("newParents"sv, move(new_parents));
+                    }
+                }
+
+                self->send_response({ .id = message_id }, move(response));
+            });
+        return;
+    }
+
+    if (message.type == "querySelectorAll"sv) {
+        auto node = get_required_parameter<String>(message, "node"sv);
+        if (!node.has_value())
+            return;
+
+        auto selector = get_required_parameter<String>(message, "selector"sv);
+        if (!selector.has_value())
+            return;
+
+        auto ancestor_node = WalkerActor::dom_node_for(*this, *node);
+        if (!ancestor_node.has_value()) {
+            send_unknown_actor_error(message, *node);
+            return;
         }
 
-        send_response(message, move(response));
+        devtools().delegate().query_selector_all(ancestor_node->tab->description(), ancestor_node->identifier.id, *selector,
+            [weak_self = make_weak_ptr<WalkerActor>(), message_id = message.id](auto node_ids_or_error) mutable {
+                auto self = weak_self.strong_ref();
+                if (!self)
+                    return;
+
+                JsonObject response;
+                if (node_ids_or_error.is_error()) {
+                    response.set("error"sv, "invalidSelector"sv);
+                    response.set("message"sv, MUST(String::formatted("{}", node_ids_or_error.error())));
+                    self->send_response({ .id = message_id }, move(response));
+                    return;
+                }
+
+                Vector<Web::UniqueNodeID> node_ids;
+                for (auto node_id : node_ids_or_error.release_value()) {
+                    if (self->node_for_id(node_id).has_value())
+                        node_ids.append(node_id);
+                }
+
+                auto length = node_ids.size();
+                auto& list = self->devtools().template register_actor<NodeListActor>(self->template make_weak_ptr<WalkerActor>(), move(node_ids));
+
+                JsonObject list_object;
+                list_object.set("actor"sv, list.name());
+                list_object.set("length"sv, length);
+                response.set("list"sv, move(list_object));
+
+                self->send_response({ .id = message_id }, move(response));
+            });
         return;
     }
 
@@ -813,28 +891,17 @@ void WalkerActor::stop_node_picker()
     m_picker_hovered_node_id.clear();
 }
 
-Optional<JsonObject const&> WalkerActor::find_node_by_selector(JsonObject const& node, StringView selector)
+Optional<JsonObject const&> WalkerActor::node_for_id(Web::UniqueNodeID node_id) const
 {
-    auto matches = [&](auto const& candidate) {
-        return candidate.get_string("name"sv)->equals_ignoring_ascii_case(selector);
-    };
+    auto actor = m_dom_node_id_to_actor_map.get(node_id);
+    if (!actor.has_value())
+        return {};
 
-    if (matches(node))
-        return node;
+    auto node = m_actor_to_dom_node_map.get(*actor);
+    if (!node.has_value() || !*node)
+        return {};
 
-    if (auto children = node.get_array("children"sv); children.has_value()) {
-        for (size_t i = 0; i < children->size(); ++i) {
-            auto const& child = children->at(i);
-
-            if (matches(child.as_object()))
-                return child.as_object();
-
-            if (auto result = find_node_by_selector(child.as_object(), selector); result.has_value())
-                return result;
-        }
-    }
-
-    return {};
+    return **node;
 }
 
 enum class Direction {

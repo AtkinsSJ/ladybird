@@ -42,6 +42,8 @@
 #include <LibWeb/DOM/Element.h>
 #include <LibWeb/DOM/ElementFactory.h>
 #include <LibWeb/DOM/Node.h>
+#include <LibWeb/DOM/NodeList.h>
+#include <LibWeb/DOM/ParentNode.h>
 #include <LibWeb/DOM/ShadowRoot.h>
 #include <LibWeb/DOM/Text.h>
 #include <LibWeb/Dump.h>
@@ -1541,6 +1543,70 @@ void ConnectionFromClient::get_node_id_at_position(u64 page_id, u64 request_id, 
     }
 
     async_did_get_node_id_at_position(page_id, request_id, page->page().node_id_at_position(position));
+}
+
+void ConnectionFromClient::query_selector(u64 page_id, u64 request_id, Web::UniqueNodeID node_id, String selector)
+{
+    auto* node = Web::DOM::Node::from_unique_id(node_id);
+    if (!node) {
+        async_did_query_selector(page_id, request_id, {}, {});
+        return;
+    }
+
+    auto* parent_node = as_if<Web::DOM::ParentNode>(*node);
+    if (!parent_node) {
+        async_did_query_selector(page_id, request_id, {}, {});
+        return;
+    }
+
+    auto result = parent_node->query_selector(selector);
+    if (result.is_exception()) {
+        async_did_query_selector(page_id, request_id, {}, "Invalid selector"_string);
+        return;
+    }
+
+    auto element = result.release_value();
+    if (!element) {
+        async_did_query_selector(page_id, request_id, {}, {});
+        return;
+    }
+
+    async_did_query_selector(page_id, request_id, element->unique_id(), {});
+}
+
+void ConnectionFromClient::query_selector_all(u64 page_id, u64 request_id, Web::UniqueNodeID node_id, String selector)
+{
+    auto* node = Web::DOM::Node::from_unique_id(node_id);
+    if (!node) {
+        async_did_query_selector_all(page_id, request_id, {}, {});
+        return;
+    }
+
+    auto send_result = [&](Web::WebIDL::ExceptionOr<GC::Ref<Web::DOM::NodeList>> result) {
+        if (result.is_exception()) {
+            async_did_query_selector_all(page_id, request_id, {}, "Invalid selector"_string);
+            return;
+        }
+
+        Vector<Web::UniqueNodeID> node_ids;
+        auto nodes = result.release_value();
+        node_ids.ensure_capacity(nodes->length());
+        for (u32 index = 0; index < nodes->length(); ++index) {
+            auto* matching_node = nodes->item(index);
+            if (!matching_node)
+                continue;
+            node_ids.unchecked_append(matching_node->unique_id());
+        }
+
+        async_did_query_selector_all(page_id, request_id, move(node_ids), {});
+    };
+
+    if (auto* parent_node = as_if<Web::DOM::ParentNode>(*node)) {
+        send_result(parent_node->query_selector_all(selector));
+        return;
+    }
+
+    async_did_query_selector_all(page_id, request_id, {}, {});
 }
 
 void ConnectionFromClient::list_style_sheets(u64 page_id)

@@ -135,6 +135,10 @@ public:
 
     using OnDOMNodeHTMLReceived = Function<void(ErrorOr<String>)>;
     using OnDOMNodeEditComplete = Function<void(ErrorOr<Web::UniqueNodeID>)>;
+    using OnDOMNodeQuerySelectorComplete = Function<void(ErrorOr<Optional<Web::UniqueNodeID>>)>;
+    using OnDOMNodeQuerySelectorAllComplete = Function<void(ErrorOr<Vector<Web::UniqueNodeID>>)>;
+    virtual void query_selector(TabDescription const&, Web::UniqueNodeID, String const&, OnDOMNodeQuerySelectorComplete on_complete) const { on_complete(Optional<Web::UniqueNodeID> {}); }
+    virtual void query_selector_all(TabDescription const&, Web::UniqueNodeID, String const&, OnDOMNodeQuerySelectorAllComplete on_complete) const { on_complete(Vector<Web::UniqueNodeID> {}); }
     virtual void get_dom_node_inner_html(TabDescription const&, Web::UniqueNodeID, OnDOMNodeHTMLReceived) const { }
     virtual void get_dom_node_outer_html(TabDescription const&, Web::UniqueNodeID, OnDOMNodeHTMLReceived) const { }
     virtual void set_dom_node_outer_html(TabDescription const&, Web::UniqueNodeID, String const&, OnDOMNodeEditComplete) const { }

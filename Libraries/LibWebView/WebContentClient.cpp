@@ -1027,6 +1027,18 @@ void WebContentClient::did_get_node_id_at_position(u64 page_id, u64 request_id, 
     }
 }
 
+void WebContentClient::did_query_selector(u64 page_id, u64 request_id, Optional<Web::UniqueNodeID> node_id, Optional<String> error)
+{
+    if (auto view = view_for_page_id(page_id); view.has_value())
+        view->did_query_selector(request_id, node_id, move(error));
+}
+
+void WebContentClient::did_query_selector_all(u64 page_id, u64 request_id, Vector<Web::UniqueNodeID> node_ids, Optional<String> error)
+{
+    if (auto view = view_for_page_id(page_id); view.has_value())
+        view->did_query_selector_all(request_id, move(node_ids), move(error));
+}
+
 void WebContentClient::did_finish_editing_dom_node(u64 page_id, Optional<Web::UniqueNodeID> node_id)
 {
     if (auto view = view_for_page_id(page_id); view.has_value()) {

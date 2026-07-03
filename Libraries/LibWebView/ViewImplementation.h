@@ -174,6 +174,8 @@ public:
     bool clear_session_storage();
     void inspect_accessibility_tree();
     void get_hovered_node_id();
+    void query_selector(Web::UniqueNodeID, String const&, DevTools::DevToolsDelegate::OnDOMNodeQuerySelectorComplete);
+    void query_selector_all(Web::UniqueNodeID, String const&, DevTools::DevToolsDelegate::OnDOMNodeQuerySelectorAllComplete);
     void start_node_picker(DevTools::DevToolsDelegate::OnNodePickerEvent);
     void stop_node_picker();
     void clear_node_picker();
@@ -643,6 +645,8 @@ protected:
     };
     void request_node_picker_hit_test(NodePickerRequestType, Web::DevicePixelPoint);
     void did_receive_node_picker_hit_test(u64 request_id, Web::UniqueNodeID);
+    void did_query_selector(u64 request_id, Optional<Web::UniqueNodeID>, Optional<String>);
+    void did_query_selector_all(u64 request_id, Vector<Web::UniqueNodeID>, Optional<String>);
     void did_receive_indexed_database_inspection(u64 request_id, JsonObject);
 
     bool m_node_picker_active { false };
@@ -650,6 +654,9 @@ protected:
     u64 m_next_node_picker_request_id { 1 };
     HashMap<u64, NodePickerRequestType> m_pending_node_picker_requests;
     DevTools::DevToolsDelegate::OnNodePickerEvent m_on_node_picker_event;
+    u64 m_next_query_selector_request_id { 1 };
+    HashMap<u64, DevTools::DevToolsDelegate::OnDOMNodeQuerySelectorComplete> m_pending_query_selector_requests;
+    HashMap<u64, DevTools::DevToolsDelegate::OnDOMNodeQuerySelectorAllComplete> m_pending_query_selector_all_requests;
 
     bool m_devtools_connected { false };
     bool m_needs_beforeunload_check { true };
