@@ -81,6 +81,7 @@ enum Command {
     Children,
     Computed,
     Eval,
+    Flex,
     Grid,
     Grids,
     Help,
@@ -139,6 +140,10 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         names: &["eval"],
         command: Command::Eval,
+    },
+    CommandSpec {
+        names: &["flex"],
+        command: Command::Flex,
     },
     CommandSpec {
         names: &["grid"],
@@ -1404,6 +1409,9 @@ fn print_help() {
     outputln!("                         Options: --extend-lines --line-numbers");
     outputln!("                                  --area-names --track-sizes --color <value>");
     outputln!("    unhighlight-grid [--all] Hide selected or all grid highlights");
+    outputln!();
+    outputln!("  Flexbox layout:");
+    outputln!("    flex                 Inspect the selected flex container");
 }
 
 fn raw_request(client: &mut DevToolsClient, json_text: &str) -> Result<()> {
@@ -1998,6 +2006,20 @@ fn select_grid(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
     Ok(())
 }
 
+fn inspect_flex(client: &mut DevToolsClient, arguments: &str) -> Result<()> {
+    ensure_no_arguments(arguments, "flex")?;
+    let layout = client.ensure_layout()?;
+    let node = client.selected_actor()?;
+    let response = client.request_for_selected_node(json!({
+        "to": layout,
+        "type": "getCurrentFlexbox",
+        "node": node,
+        "onlyLookAtParents": false,
+    }))?;
+    print_layout_object("flexbox", response.get("flexbox"));
+    Ok(())
+}
+
 fn picker_command(client: &mut DevToolsClient, request_type: &str) -> Result<()> {
     let walker = client.ensure_walker()?;
     client.request_for_frame_actor(json!({
@@ -2263,6 +2285,7 @@ fn run_repl(mut client: DevToolsClient) -> Result<()> {
             Some(Command::Grids) => select_grid(&mut client, rest),
             Some(Command::HighlightGrid) => highlight_grid(&mut client, rest),
             Some(Command::UnhighlightGrid) => unhighlight_grid(&mut client, rest),
+            Some(Command::Flex) => inspect_flex(&mut client, rest),
             Some(Command::Raw) => raw_request(&mut client, rest),
             Some(Command::Quit) => break,
             None => Err(format!("Unknown command: {command}").into()),

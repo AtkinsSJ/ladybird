@@ -91,6 +91,11 @@ Property filters support wildcards, for example `computed border-*`.
   highlights.
 
 
+### Flexbox Layout
+
+- `flex` prints flexbox data for the selected node.
+
+
 ## Smoke Check
 
 A useful manual sequence is:
