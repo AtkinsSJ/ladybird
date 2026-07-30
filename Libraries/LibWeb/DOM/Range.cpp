@@ -1184,6 +1184,7 @@ GC::Ref<Geometry::DOMRectList> Range::get_client_rects()
         return Geometry::DOMRectList::create({});
 
     start_container()->document().update_layout(DOM::UpdateLayoutReason::RangeGetClientRects);
+    start_container()->document().update_paint_and_hit_testing_properties_if_needed();
     Vector<GC::Root<Geometry::DOMRect>> rects;
     // FIXME: take Range collapsed into consideration
     // 2. Iterate the node included in Range
@@ -1271,7 +1272,8 @@ GC::Ref<Geometry::DOMRectList> Range::get_client_rects()
                 VERIFY_NOT_REACHED();
             }
             mapping.for_each_paintable_fragment_in_dom_range(filter_dom_start, filter_dom_end, [&](Painting::PaintableFragment const& fragment) {
-                auto rect = fragment.range_rect(selection_state, start_offset(), end_offset());
+                auto absolute_rect = fragment.range_rect(selection_state, start_offset(), end_offset());
+                auto rect = fragment.paintable_with_lines().transform_rect_to_viewport(absolute_rect, Painting::AccumulatedVisualContextTree::IncludeVisualViewportTransform::No);
                 rects.append(Geometry::DOMRect::create(rect.to_type<float>()));
             });
         }
