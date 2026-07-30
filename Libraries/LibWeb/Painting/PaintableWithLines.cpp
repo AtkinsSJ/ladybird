@@ -11,8 +11,10 @@
 #include <AK/QuickSort.h>
 #include <LibGfx/Font/Font.h>
 #include <LibGfx/TextLayout.h>
+#include <LibWeb/CSS/SystemColor.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Position.h>
+#include <LibWeb/DOM/Range.h>
 #include <LibWeb/HTML/FormAssociatedElement.h>
 #include <LibWeb/HTML/HTMLBRElement.h>
 #include <LibWeb/HTML/LocalNavigable.h>
@@ -402,8 +404,11 @@ void PaintableWithLines::paint_fragments_foreground(DisplayListRecordingContext&
 
     for (auto const& span : spans) {
         if (span.background_color.alpha() > 0) {
-            auto selection_rect = context.rounded_device_rect(span.fragment.selection_rect()).to_type<int>();
-            context.display_list_recorder().fill_rect(selection_rect, span.background_color);
+            auto range_rect = span.fragment.range_rect(
+                Paintable::SelectionState::StartAndEnd,
+                span.fragment.dom_start_offset_in_node() + span.start_code_unit,
+                span.fragment.dom_start_offset_in_node() + span.end_code_unit);
+            context.display_list_recorder().fill_rect(context.rounded_device_rect(range_rect).to_type<int>(), span.background_color);
         }
     }
 
@@ -440,70 +445,171 @@ void compute_render_spans(PaintableFragment const& fragment, Vector<PaintableFra
     auto text_color = text_node->parent()->webkit_text_fill_color();
     auto selection_offsets = fragment.selection_offsets();
 
-    // No selection: single span with base styling.
-    if (!selection_offsets.has_value()) {
-        spans.append({
-            .fragment = fragment,
-            .start_code_unit = 0,
-            .end_code_unit = fragment.length_in_code_units(),
-            .text_color = text_color,
-            .background_color = Color::Transparent,
-            .shadow_layers = {},
-            .text_decoration = {},
-        });
+    // https://wicg.github.io/scroll-to-text-fragment/#indicating-the-text-match
+    // The UA should visually indicate the matched text in some way such that the user is made
+    // aware of the text match, such as with a high-contrast highlight.
+    // The exact appearance and mechanics of the indication are left as UA-defined. However, the
+    // UA must not use any methods observable by author script, such as the Document's selection,
+    // to indicate the text match.
+    auto text_fragment_indication_offsets = [&] {
+        Vector<PaintableFragment::SelectionOffsets, 4> offsets;
+        auto dom_text = text_node->dom_text();
+        if (!dom_text)
+            return offsets;
+        auto& mutable_dom_text = const_cast<DOM::Text&>(*dom_text);
+
+        for (auto const& range : text_node->document().text_fragment_ranges()) {
+            if (!range->intersects_node(mutable_dom_text))
+                continue;
+
+            auto start = fragment.dom_start_offset_in_node();
+            auto end = fragment.dom_end_offset_in_node();
+            if (range->start_container().ptr() == dom_text)
+                start = max(start, static_cast<size_t>(range->start_offset()));
+            if (range->end_container().ptr() == dom_text)
+                end = min(end, static_cast<size_t>(range->end_offset()));
+            if (start >= end)
+                continue;
+
+            offsets.append({
+                start - fragment.dom_start_offset_in_node(),
+                end - fragment.dom_start_offset_in_node(),
+            });
+        }
+        return offsets;
+    }();
+
+    // Preserve the existing selection-only rendering path when there is no text-fragment
+    // indication overlapping this fragment.
+    if (text_fragment_indication_offsets.is_empty()) {
+        // No selection: single span with base styling.
+        if (!selection_offsets.has_value()) {
+            spans.append({
+                .fragment = fragment,
+                .start_code_unit = 0,
+                .end_code_unit = fragment.length_in_code_units(),
+                .text_color = text_color,
+                .background_color = Color::Transparent,
+                .shadow_layers = {},
+                .text_decoration = {},
+            });
+            return;
+        }
+
+        auto [selection_start, selection_end] = *selection_offsets;
+        auto selection_style = Paintable::selection_style_for_node(*text_node, text_node->dom_text());
+        auto selection_text_color = selection_style.text_color.value_or(text_color);
+
+        // Convert selection text decoration to fragment text decoration data.
+        Optional<PaintableFragment::TextDecorationData> selection_text_decoration;
+        if (selection_style.text_decoration.has_value()) {
+            selection_text_decoration = PaintableFragment::TextDecorationData {
+                .line = move(selection_style.text_decoration->line),
+                .style = selection_style.text_decoration->style,
+                .color = selection_style.text_decoration->color,
+            };
+        }
+
+        // Before selection.
+        if (selection_start > 0) {
+            spans.append({
+                .fragment = fragment,
+                .start_code_unit = 0,
+                .end_code_unit = selection_start,
+                .text_color = text_color,
+                .background_color = Color::Transparent,
+                .shadow_layers = {},
+                .text_decoration = {},
+            });
+        }
+
+        // Selected portion.
+        if (selection_start < selection_end) {
+            spans.append({
+                .fragment = fragment,
+                .start_code_unit = selection_start,
+                .end_code_unit = selection_end,
+                .text_color = selection_text_color,
+                .background_color = selection_style.background_color,
+                .shadow_layers = move(selection_style.text_shadow),
+                .text_decoration = move(selection_text_decoration),
+            });
+        }
+
+        // After selection.
+        if (selection_end < fragment.length_in_code_units()) {
+            spans.append({
+                .fragment = fragment,
+                .start_code_unit = selection_end,
+                .end_code_unit = fragment.length_in_code_units(),
+                .text_color = text_color,
+                .background_color = Color::Transparent,
+                .shadow_layers = {},
+                .text_decoration = {},
+            });
+        }
         return;
     }
 
-    auto [selection_start, selection_end] = *selection_offsets;
-    auto selection_style = Paintable::selection_style_for_node(*text_node, text_node->dom_text());
-    auto selection_text_color = selection_style.text_color.value_or(text_color);
-
-    // Convert selection text decoration to fragment text decoration data.
+    Optional<Paintable::SelectionStyle> selection_style;
+    Color selection_text_color;
     Optional<PaintableFragment::TextDecorationData> selection_text_decoration;
-    if (selection_style.text_decoration.has_value()) {
-        selection_text_decoration = PaintableFragment::TextDecorationData {
-            .line = move(selection_style.text_decoration->line),
-            .style = selection_style.text_decoration->style,
-            .color = selection_style.text_decoration->color,
-        };
+    if (selection_offsets.has_value()) {
+        selection_style = Paintable::selection_style_for_node(*text_node, text_node->dom_text());
+        selection_text_color = selection_style->text_color.value_or(text_color);
+
+        // Convert selection text decoration to fragment text decoration data.
+        if (selection_style->text_decoration.has_value()) {
+            selection_text_decoration = PaintableFragment::TextDecorationData {
+                .line = selection_style->text_decoration->line,
+                .style = selection_style->text_decoration->style,
+                .color = selection_style->text_decoration->color,
+            };
+        }
     }
 
-    // Before selection.
-    if (selection_start > 0) {
-        spans.append({
-            .fragment = fragment,
-            .start_code_unit = 0,
-            .end_code_unit = selection_start,
-            .text_color = text_color,
-            .background_color = Color::Transparent,
-            .shadow_layers = {},
-            .text_decoration = {},
-        });
+    Vector<size_t, 8> boundaries;
+    boundaries.append(0);
+    boundaries.append(fragment.length_in_code_units());
+    if (selection_offsets.has_value()) {
+        boundaries.append(selection_offsets->start);
+        boundaries.append(selection_offsets->end);
     }
-
-    // Selected portion.
-    if (selection_start < selection_end) {
-        spans.append({
-            .fragment = fragment,
-            .start_code_unit = selection_start,
-            .end_code_unit = selection_end,
-            .text_color = selection_text_color,
-            .background_color = selection_style.background_color,
-            .shadow_layers = move(selection_style.text_shadow),
-            .text_decoration = move(selection_text_decoration),
-        });
+    for (auto const& indication : text_fragment_indication_offsets) {
+        boundaries.append(indication.start);
+        boundaries.append(indication.end);
     }
+    quick_sort(boundaries);
 
-    // After selection.
-    if (selection_end < fragment.length_in_code_units()) {
+    auto const mark_color = CSS::SystemColor::mark(text_node->document().page().preferred_color_scheme());
+    auto const mark_text_color = CSS::SystemColor::mark_text(text_node->document().page().preferred_color_scheme());
+
+    for (size_t index = 1; index < boundaries.size(); ++index) {
+        auto const start = boundaries[index - 1];
+        auto const end = boundaries[index];
+        if (start == end)
+            continue;
+
+        auto const is_selected = selection_offsets.has_value()
+            && start >= selection_offsets->start
+            && end <= selection_offsets->end;
+        auto const is_text_fragment_indication = [&] {
+            for (auto const& indication : text_fragment_indication_offsets) {
+                if (start >= indication.start && end <= indication.end)
+                    return true;
+            }
+            return false;
+        }();
+
         spans.append({
             .fragment = fragment,
-            .start_code_unit = selection_end,
-            .end_code_unit = fragment.length_in_code_units(),
-            .text_color = text_color,
-            .background_color = Color::Transparent,
-            .shadow_layers = {},
-            .text_decoration = {},
+            .start_code_unit = start,
+            .end_code_unit = end,
+            // A real selection is painted above the text-fragment indication.
+            .text_color = is_selected ? selection_text_color : (is_text_fragment_indication ? mark_text_color : text_color),
+            .background_color = is_selected ? selection_style->background_color : (is_text_fragment_indication ? mark_color : Color::Transparent),
+            .shadow_layers = is_selected ? selection_style->text_shadow : Optional<Vector<ShadowData>> {},
+            .text_decoration = is_selected ? selection_text_decoration : Optional<PaintableFragment::TextDecorationData> {},
         });
     }
 }
