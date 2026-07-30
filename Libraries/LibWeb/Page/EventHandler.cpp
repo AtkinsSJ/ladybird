@@ -2002,7 +2002,9 @@ EventResult EventHandler::focus_next_element()
         return EventResult::Dropped;
     };
 
-    auto node = m_navigable->active_document()->focused_area();
+    auto node = m_navigable->active_document()->sequential_focus_navigation_starting_point();
+    if (!node)
+        node = m_navigable->active_document()->focused_area();
     if (!node)
         return set_focus_to_first_focusable_element();
 
@@ -2037,7 +2039,9 @@ EventResult EventHandler::focus_previous_element()
         return EventResult::Dropped;
     };
 
-    auto node = m_navigable->active_document()->focused_area();
+    auto node = m_navigable->active_document()->sequential_focus_navigation_starting_point();
+    if (!node)
+        node = m_navigable->active_document()->focused_area();
     if (!node)
         return set_focus_to_last_focusable_element();
 
