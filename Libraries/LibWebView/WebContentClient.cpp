@@ -608,6 +608,8 @@ void WebContentClient::did_start_loading(u64 page_id, Optional<Utf16String> navi
         view->m_should_suppress_history_for_next_load = false;
         view->did_start_navigation(url, is_redirect, navigation_id.has_value());
 
+        if (!is_redirect)
+            view->set_text_fragment_indication_visibility({}, false);
         view->set_url({}, url);
         view->set_title({}, Utf16String::from_utf8(url.serialize()));
         view->set_favicon({}, {});
@@ -847,6 +849,11 @@ void WebContentClient::did_change_title(u64 page_id, Utf16String title)
     }
 }
 
+void WebContentClient::did_set_text_fragment_indication_visibility(u64 page_id, bool visible)
+{
+    if (auto view = view_for_page_id(page_id); view.has_value())
+        view->set_text_fragment_indication_visibility({}, visible);
+}
 void WebContentClient::did_request_tooltip_override(u64 page_id, Gfx::IntPoint position, ByteString title)
 {
     if (auto view = view_for_page_id(page_id); view.has_value()) {

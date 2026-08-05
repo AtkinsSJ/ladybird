@@ -90,7 +90,9 @@ public:
     CanonicalTraversable const& traversable() const { return m_top_level_traversable; }
 
     void set_url(Badge<WebContentClient>, URL::URL url) { set_url(move(url)); }
+    void set_text_fragment_indication_visibility(Badge<WebContentClient>, bool);
     URL::URL const& url() const { return m_url; }
+    URL::URL const& displayed_url() const { return m_displayed_url; }
 
     void set_title(Badge<WebContentClient>, Utf16String title);
     Utf16String const& title() const { return m_title; }
@@ -478,6 +480,7 @@ protected:
     u64 page_id() const;
 
     void set_url(URL::URL);
+    void update_displayed_url();
     void did_start_navigation(URL::URL const&, bool is_redirect, bool has_navigation_id);
     bool did_cancel_navigation();
     void did_finish_navigation(URL::URL const&);
@@ -668,6 +671,7 @@ protected:
     bool m_can_undo { false };
     bool m_can_redo { false };
     bool m_is_loading { false };
+    bool m_text_fragment_indication_is_visible { false };
     bool m_is_waiting_for_navigation_start { false };
     Optional<Utf16String> m_loading_navigation_id;
     Optional<URL::URL> m_loading_url;
