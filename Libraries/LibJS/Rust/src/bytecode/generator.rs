@@ -209,6 +209,8 @@ pub struct LocalVariable {
     pub name: Utf16String,
     pub is_lexically_declared: bool,
     pub is_initialized_during_declaration_instantiation: bool,
+    pub is_mutable: bool,
+    pub scope_range: Option<crate::ast::SourceRange>,
 }
 
 /// The bytecode generator.

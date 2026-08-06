@@ -47,6 +47,7 @@ public:
     bool pause_execution(Bytecode::Executable&, u32 bytecode_offset, PauseReason);
     void continue_execution();
     bool is_paused() const { return m_is_paused; }
+    ThrowCompletionOr<Value> evaluate_in_frame(ExecutionContext&, Utf16View source_text);
 
     // Set before each instruction is executed, so that a `debugger` statement doesn't pause a
     // second time when we've already paused at a breakpoint on that same instruction.
@@ -73,6 +74,8 @@ private:
     GC::WeakHashSet<Bytecode::Executable> m_executables;
     Vector<Breakpoint> m_breakpoints;
     BreakpointID m_next_breakpoint_id { 1 };
+    ExecutionContext* m_paused_execution_context { nullptr };
+    Optional<SourceRange> m_paused_source_range;
     bool m_is_paused { false };
     bool m_pause_on_next_bytecode_execution { false };
     bool m_did_pause_before_current_instruction { false };

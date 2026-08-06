@@ -4,11 +4,17 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/Enumerate.h>
+#include <AK/HashMap.h>
 #include <AK/NumericLimits.h>
 #include <LibGC/Heap.h>
 #include <LibGC/WeakInlines.h>
 #include <LibJS/Bytecode/Executable.h>
 #include <LibJS/Debugger.h>
+#include <LibJS/Runtime/AbstractOperations.h>
+#include <LibJS/Runtime/DeclarativeEnvironment.h>
+#include <LibJS/Runtime/ECMAScriptFunctionObject.h>
+#include <LibJS/Runtime/PrimitiveString.h>
 #include <LibJS/Runtime/VM.h>
 
 namespace JS {
@@ -36,15 +42,20 @@ bool Debugger::pause_execution(Bytecode::Executable& executable, u32 bytecode_of
 
     auto stack_trace = executable.vm().stack_trace();
     VERIFY(!stack_trace.is_empty());
-    stack_trace.first().source_range = executable.source_range_at(bytecode_offset);
+    auto source_range = executable.source_range_at(bytecode_offset);
+    stack_trace.first().source_range = source_range;
+    m_paused_execution_context = stack_trace.first().execution_context;
+    m_paused_source_range = source_range;
     m_pause_callback({
         .executable = executable,
         .bytecode_offset = bytecode_offset,
-        .source_range = executable.source_range_at(bytecode_offset),
+        .source_range = move(source_range),
         .stack_trace = move(stack_trace),
         .reason = reason,
     });
     VERIFY(!m_is_paused);
+    m_paused_execution_context = nullptr;
+    m_paused_source_range.clear();
     return true;
 }
 
@@ -52,6 +63,104 @@ void Debugger::continue_execution()
 {
     VERIFY(m_is_paused);
     m_is_paused = false;
+}
+
+ThrowCompletionOr<Value> Debugger::evaluate_in_frame(ExecutionContext& execution_context, Utf16View source_text)
+{
+    VERIFY(m_is_paused);
+    VERIFY(execution_context.executable);
+
+    auto& vm = execution_context.executable->vm();
+    auto context = execution_context.copy();
+    auto local_environment = new_declarative_environment(*context->lexical_environment);
+
+    enum class BindingStorage {
+        Argument,
+        Local,
+    };
+    struct BindingLocation {
+        BindingStorage storage;
+        size_t index;
+        bool is_mutable;
+        Optional<Bytecode::Executable::LocalVariableScopeRange> scope_range;
+    };
+    HashMap<Utf16FlyString, BindingLocation> binding_locations;
+
+    if (context->function) {
+        if (auto* function = as_if<ECMAScriptFunctionObject>(*context->function)) {
+            for (auto const& [index, name] : enumerate(function->parameter_names_for_mapped_arguments())) {
+                if (!name.is_empty())
+                    binding_locations.set(name, { BindingStorage::Argument, index, true, {} });
+            }
+        }
+    }
+
+    auto paused_source_range = m_paused_execution_context == &execution_context
+        ? m_paused_source_range
+        : context->executable->source_range_at(context->program_counter);
+    auto position_is_before = [](Position const& left, Position const& right) {
+        return left.line < right.line || (left.line == right.line && left.column < right.column);
+    };
+    auto scope_is_active = [&](Optional<Bytecode::Executable::LocalVariableScopeRange> const& scope_range) {
+        if (!scope_range.has_value() || !paused_source_range.has_value())
+            return true;
+        auto const& position = paused_source_range->start;
+        return !position_is_before(position, scope_range->start)
+            && position_is_before(position, scope_range->end);
+    };
+
+    for (auto const& [index, name] : enumerate(context->executable->local_variable_names)) {
+        if (name.is_empty())
+            continue;
+        auto const& metadata = context->executable->local_variable_metadata[index];
+        if (!scope_is_active(metadata.scope_range))
+            continue;
+
+        auto existing = binding_locations.find(name);
+        if (existing != binding_locations.end() && existing->value.storage == BindingStorage::Local) {
+            if (!metadata.scope_range.has_value())
+                continue;
+            if (existing->value.scope_range.has_value()
+                && !position_is_before(existing->value.scope_range->start, metadata.scope_range->start)) {
+                continue;
+            }
+        }
+        binding_locations.set(name, { BindingStorage::Local, index, metadata.is_mutable, metadata.scope_range });
+    }
+
+    for (auto const& [name, location] : binding_locations) {
+        if (location.is_mutable)
+            TRY(local_environment->create_mutable_binding(vm, name, false));
+        else
+            TRY(local_environment->create_immutable_binding(vm, name, true));
+        auto value = location.storage == BindingStorage::Local
+            ? context->local_variables()[location.index]
+            : context->argument(location.index);
+        if (!value.is_special_empty_value())
+            TRY(local_environment->initialize_binding(vm, name, value, Environment::InitializeBindingHint::Normal));
+    }
+    context->lexical_environment = local_environment;
+    context->variable_environment = local_environment;
+    TRY(vm.push_execution_context(*context, {}));
+    ScopeGuard pop_context = [&] {
+        vm.pop_execution_context();
+    };
+
+    auto strict_caller = execution_context.executable->is_strict_mode ? CallerMode::Strict : CallerMode::NonStrict;
+    auto result = perform_eval(vm, PrimitiveString::create(vm, source_text), strict_caller, EvalMode::Direct);
+
+    for (auto const& [name, location] : binding_locations) {
+        if (!location.is_mutable)
+            continue;
+        auto value = local_environment->get_binding_value(vm, name, false);
+        if (value.is_error())
+            continue;
+        if (location.storage == BindingStorage::Local)
+            execution_context.local_variables()[location.index] = value.release_value();
+        else
+            execution_context.arguments_span()[location.index] = value.release_value();
+    }
+    return result;
 }
 
 bool Debugger::should_pause_on_next_bytecode_execution(Bytecode::Executable const& executable, u32 bytecode_offset)

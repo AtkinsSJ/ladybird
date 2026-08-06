@@ -59,6 +59,16 @@ pub struct FFIExceptionHandler {
     pub handler_offset: u32,
 }
 
+#[repr(C)]
+pub struct FFILocalVariableMetadata {
+    pub is_mutable: bool,
+    pub has_scope_range: bool,
+    pub scope_start_line: u32,
+    pub scope_start_column: u32,
+    pub scope_end_line: u32,
+    pub scope_end_column: u32,
+}
+
 /// Source map entry mapping bytecode offset to source position.
 #[repr(C)]
 pub struct FFISourceMapEntry {
@@ -225,6 +235,7 @@ pub struct FFIExecutableData {
     pub basic_block_offsets: *const usize,
     pub basic_block_count: usize,
     pub local_variable_names: *const FFIUtf16Slice,
+    pub local_variable_metadata: *const FFILocalVariableMetadata,
     pub local_variable_count: usize,
     pub property_lookup_cache_count: u32,
     pub global_variable_cache_count: u32,
@@ -780,6 +791,7 @@ pub struct ExecutableSlices<'a> {
     pub constants_data: &'a [u8],
     pub constants_count: usize,
     pub local_variable_names: &'a [FFIUtf16Slice],
+    pub local_variable_metadata: &'a [FFILocalVariableMetadata],
     pub compiled_regexes: &'a [*mut c_void],
 }
 
@@ -844,6 +856,7 @@ pub unsafe fn create_executable_from_slices(
             basic_block_offsets: parts.basic_block_start_offsets.as_ptr(),
             basic_block_count: parts.basic_block_start_offsets.len(),
             local_variable_names: slices.local_variable_names.as_ptr(),
+            local_variable_metadata: slices.local_variable_metadata.as_ptr(),
             local_variable_count: slices.local_variable_names.len(),
             property_lookup_cache_count: metadata.property_lookup_cache_count,
             global_variable_cache_count: metadata.global_variable_cache_count,
@@ -913,6 +926,18 @@ pub unsafe fn create_executable_with_dependencies_from_parts(
             .iter()
             .map(|v| FFIUtf16Slice::from(v.name.as_ref()))
             .collect();
+        let local_variable_metadata: Vec<FFILocalVariableMetadata> = generator
+            .local_variables
+            .iter()
+            .map(|variable| FFILocalVariableMetadata {
+                is_mutable: variable.is_mutable,
+                has_scope_range: variable.scope_range.is_some(),
+                scope_start_line: variable.scope_range.map_or(0, |range| range.start.line),
+                scope_start_column: variable.scope_range.map_or(0, |range| range.start.column),
+                scope_end_line: variable.scope_range.map_or(0, |range| range.end.line),
+                scope_end_column: variable.scope_range.map_or(0, |range| range.end.column),
+            })
+            .collect();
 
         let metadata = ExecutableMetadata {
             property_lookup_cache_count: generator.next_property_lookup_cache,
@@ -932,6 +957,7 @@ pub unsafe fn create_executable_with_dependencies_from_parts(
             constants_data: &constants_buffer,
             constants_count: generator.constants.len(),
             local_variable_names: &local_var_slices,
+            local_variable_metadata: &local_variable_metadata,
             compiled_regexes: &generator.compiled_regexes,
         };
 

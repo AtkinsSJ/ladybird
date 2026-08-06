@@ -312,6 +312,8 @@ fn convert_local_variables(scope: &ast::ScopeData) -> Vec<bytecode::generator::L
             name: lv.name.clone(),
             is_lexically_declared: lv.kind == ast::LocalVarKind::LetOrConst,
             is_initialized_during_declaration_instantiation: false,
+            is_mutable: lv.is_mutable,
+            scope_range: lv.scope_range,
         })
         .collect()
 }

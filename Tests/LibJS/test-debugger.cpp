@@ -91,6 +91,166 @@ outer();
     EXPECT(!result.is_error());
 }
 
+TEST_CASE(debugger_can_evaluate_in_a_paused_frame)
+{
+    auto vm = JS::VM::create();
+    auto root_execution_context = JS::create_simple_execution_context<JS::GlobalObject>(*vm);
+    auto& realm = *root_execution_context->realm;
+
+    auto script_or_error = JS::Script::parse(R"(
+function answer()
+{
+    let value = 41;
+    debugger;
+    return value;
+}
+answer();
+)"sv,
+        realm, "evaluate.js"sv);
+    VERIFY(!script_or_error.is_error());
+
+    vm->enable_debugging();
+    vm->debugger()->set_pause_callback([&](JS::Debugger::PauseInfo const& pause_info) {
+        auto* frame = pause_info.stack_trace.first().execution_context;
+        VERIFY(frame);
+
+        auto result = vm->debugger()->evaluate_in_frame(*frame, "value + 1"sv);
+        VERIFY(!result.is_error());
+        EXPECT_EQ(result.release_value().as_i32(), 42);
+
+        result = vm->debugger()->evaluate_in_frame(*frame, "value = 50"sv);
+        VERIFY(!result.is_error());
+        EXPECT_EQ(result.release_value().as_i32(), 50);
+        vm->debugger()->continue_execution();
+    });
+
+    auto result = vm->run(*script_or_error.value());
+    VERIFY(!result.is_error());
+    EXPECT_EQ(result.release_value().as_i32(), 50);
+}
+
+TEST_CASE(debugger_frame_evaluation_exposes_and_updates_parameters)
+{
+    auto vm = JS::VM::create();
+    auto root_execution_context = JS::create_simple_execution_context<JS::GlobalObject>(*vm);
+    auto& realm = *root_execution_context->realm;
+
+    auto script_or_error = JS::Script::parse("function update(value) { debugger; return value; } update(41);"sv, realm, "parameters.js"sv);
+    VERIFY(!script_or_error.is_error());
+
+    vm->enable_debugging();
+    vm->debugger()->set_pause_callback([&](JS::Debugger::PauseInfo const& pause_info) {
+        auto* frame = pause_info.stack_trace.first().execution_context;
+        VERIFY(frame);
+
+        auto result = vm->debugger()->evaluate_in_frame(*frame, "value += 1"sv);
+        VERIFY(!result.is_error());
+        EXPECT_EQ(result.release_value().as_i32(), 42);
+        vm->debugger()->continue_execution();
+    });
+
+    auto result = vm->run(*script_or_error.value());
+    VERIFY(!result.is_error());
+    EXPECT_EQ(result.release_value().as_i32(), 42);
+}
+
+TEST_CASE(debugger_frame_evaluation_preserves_const_bindings)
+{
+    auto vm = JS::VM::create();
+    auto root_execution_context = JS::create_simple_execution_context<JS::GlobalObject>(*vm);
+    auto& realm = *root_execution_context->realm;
+
+    auto script_or_error = JS::Script::parse("function read() { const value = 41; debugger; return value; } read();"sv, realm, "const.js"sv);
+    VERIFY(!script_or_error.is_error());
+
+    vm->enable_debugging();
+    vm->debugger()->set_pause_callback([&](JS::Debugger::PauseInfo const& pause_info) {
+        auto* frame = pause_info.stack_trace.first().execution_context;
+        VERIFY(frame);
+        EXPECT(vm->debugger()->evaluate_in_frame(*frame, "value = 42"sv).is_error());
+        vm->debugger()->continue_execution();
+    });
+
+    auto result = vm->run(*script_or_error.value());
+    VERIFY(!result.is_error());
+    EXPECT_EQ(result.release_value().as_i32(), 41);
+}
+
+TEST_CASE(debugger_frame_evaluation_does_not_overwrite_shadowed_locals)
+{
+    auto vm = JS::VM::create();
+    auto root_execution_context = JS::create_simple_execution_context<JS::GlobalObject>(*vm);
+    auto& realm = *root_execution_context->realm;
+
+    auto script_or_error = JS::Script::parse(R"(
+function readOuterValue()
+{
+    let value = 1;
+    {
+        let value = 2;
+        debugger;
+    }
+    return value;
+}
+readOuterValue();
+)"sv,
+        realm, "shadowed-locals.js"sv);
+    VERIFY(!script_or_error.is_error());
+
+    vm->enable_debugging();
+    vm->debugger()->set_pause_callback([&](JS::Debugger::PauseInfo const& pause_info) {
+        auto* frame = pause_info.stack_trace.first().execution_context;
+        VERIFY(frame);
+
+        auto result = vm->debugger()->evaluate_in_frame(*frame, "value"sv);
+        VERIFY(!result.is_error());
+        EXPECT_EQ(result.release_value().as_i32(), 2);
+        vm->debugger()->continue_execution();
+    });
+
+    auto result = vm->run(*script_or_error.value());
+    VERIFY(!result.is_error());
+    EXPECT_EQ(result.release_value().as_i32(), 1);
+}
+
+TEST_CASE(debugger_frame_evaluation_uses_the_active_shadowed_binding)
+{
+    auto vm = JS::VM::create();
+    auto root_execution_context = JS::create_simple_execution_context<JS::GlobalObject>(*vm);
+    auto& realm = *root_execution_context->realm;
+
+    auto script_or_error = JS::Script::parse(R"(
+function readValue()
+{
+    let value = 1;
+    debugger;
+    {
+        let value = 2;
+        debugger;
+    }
+    debugger;
+}
+readValue();
+)"sv,
+        realm, "shadowed-live-ranges.js"sv);
+    VERIFY(!script_or_error.is_error());
+
+    Vector<i32> values;
+    vm->enable_debugging();
+    vm->debugger()->set_pause_callback([&](JS::Debugger::PauseInfo const& pause_info) {
+        auto* frame = pause_info.stack_trace.first().execution_context;
+        VERIFY(frame);
+        auto result = vm->debugger()->evaluate_in_frame(*frame, "value"sv);
+        VERIFY(!result.is_error());
+        values.append(result.release_value().as_i32());
+        vm->debugger()->continue_execution();
+    });
+
+    auto result = vm->run(*script_or_error.value());
+    EXPECT(!result.is_error());
+    EXPECT_EQ(values, (Vector<i32> { 1, 2, 1 }));
+}
+
 TEST_CASE(breakpoints_resolve_to_source_map_entries)
 {
     auto vm = JS::VM::create();
