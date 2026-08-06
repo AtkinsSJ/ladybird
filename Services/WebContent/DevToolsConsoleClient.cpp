@@ -38,7 +38,7 @@ DevToolsConsoleClient::DevToolsConsoleClient(JS::Realm& realm, JS::Console& cons
 DevToolsConsoleClient::~DevToolsConsoleClient() = default;
 
 // https://firefox-source-docs.mozilla.org/devtools/backend/protocol.html#grips
-static JsonValue serialize_js_value(JS::Realm& realm, JS::Value value)
+JsonValue DevToolsConsoleClient::serialize_value(JS::Realm& realm, JS::Value value)
 {
     auto& vm = realm.vm();
 
@@ -97,7 +97,7 @@ static JsonValue serialize_js_value(JS::Realm& realm, JS::Value value)
 
 void DevToolsConsoleClient::handle_result(JS::Value result)
 {
-    m_client->did_execute_js_console_input(serialize_js_value(m_realm, result));
+    m_client->did_execute_js_console_input(serialize_value(m_realm, result));
 }
 
 void DevToolsConsoleClient::report_exception(Utf16View name, Utf16View message, JS::ErrorData const& error_data, bool in_promise)
@@ -186,13 +186,16 @@ JS::ThrowCompletionOr<JS::Value> DevToolsConsoleClient::printer(JS::Console::Log
     serialized_arguments.ensure_capacity(argument_values.size());
 
     for (auto value : argument_values)
-        serialized_arguments.unchecked_append(serialize_js_value(m_console->realm(), value));
+        serialized_arguments.unchecked_append(serialize_value(m_console->realm(), value));
 
     send_console_output({
         .timestamp = UnixDateTime::now(),
         .output = WebView::ConsoleLog {
             .level = log_level,
             .arguments = move(serialized_arguments),
+            .type = WebView::ConsoleLogType::ConsoleAPI,
+            .location = {},
+            .stacktrace = {},
         },
     });
 
