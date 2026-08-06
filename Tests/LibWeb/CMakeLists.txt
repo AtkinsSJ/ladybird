@@ -10,6 +10,7 @@ set(TEST_SOURCES
     TestCSSTokenizer.cpp
     TestCSSTokenStream.cpp
     TestDisplayListDamage.cpp
+    TestEventLoop.cpp
     TestFetchResponse.cpp
     TestFetchURL.cpp
     TestHTMLTokenizer.cpp
