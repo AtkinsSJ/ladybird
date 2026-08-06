@@ -2714,6 +2714,7 @@ TEST_CASE(debugger_pause_and_resume)
     WebView::DebuggerPause pause {
         .reason = WebView::DebuggerPauseReason::DebuggerStatement,
         .reason_message = {},
+        .exception = {},
         .frames = {},
     };
     pause.frames.append({
@@ -2887,6 +2888,7 @@ TEST_CASE(debugger_thread_state_protocol)
     WebView::DebuggerPause pause {
         .reason = WebView::DebuggerPauseReason::Entry,
         .reason_message = {},
+        .exception = {},
         .frames = {},
     };
     pause.frames.append({

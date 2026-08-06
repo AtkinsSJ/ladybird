@@ -3209,6 +3209,7 @@ impl Encode for ExceptionHandlerTable<'_> {
             handler.start_offset.encode(encoder);
             handler.end_offset.encode(encoder);
             handler.handler_offset.encode(encoder);
+            handler.catches_exception.encode(encoder);
         });
     }
 }
@@ -3238,6 +3239,7 @@ impl DecodedExceptionHandlerTable {
                 start_offset: u32::decode(&mut decoder)?,
                 end_offset: u32::decode(&mut decoder)?,
                 handler_offset: u32::decode(&mut decoder)?,
+                catches_exception: bool::decode(&mut decoder)?,
             });
         }
         decoder.is_empty().then_some(values)
