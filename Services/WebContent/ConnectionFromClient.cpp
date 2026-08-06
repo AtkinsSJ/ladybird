@@ -1707,6 +1707,16 @@ void ConnectionFromClient::get_debugger_source_positions(u64 page_id, u64 reques
     async_did_get_debugger_source_positions(page_id, request_id, page->devtools_source_breakpoint_positions(source_id));
 }
 
+void ConnectionFromClient::get_debugger_environments(u64 page_id, u64 request_id, u64 frame_id)
+{
+    auto page = m_page_host->page(page_id);
+    if (!page.has_value() || !m_devtools_debugger) {
+        async_did_get_debugger_environments(page_id, request_id, {});
+        return;
+    }
+    async_did_get_debugger_environments(page_id, request_id, m_devtools_debugger->environments_for_frame(*page, frame_id));
+}
+
 void ConnectionFromClient::resolve_dom_node_url(u64 page_id, u64 request_id, Optional<Web::UniqueNodeID> node_id, String url)
 {
     auto page = this->page(page_id);
