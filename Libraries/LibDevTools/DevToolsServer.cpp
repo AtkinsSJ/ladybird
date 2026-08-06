@@ -49,6 +49,7 @@ DevToolsServer::DevToolsServer(DevToolsDelegate& delegate, NonnullRefPtr<Core::T
 
 DevToolsServer::~DevToolsServer()
 {
+    notify_actors_connection_closed();
     m_is_shutting_down = true;
     m_server->on_ready_to_accept = {};
 
@@ -154,11 +155,23 @@ void DevToolsServer::close_connection()
             return;
 
         weak_self->m_connection = nullptr;
+        weak_self->notify_actors_connection_closed();
+
         weak_self->m_actor_registry.clear();
         weak_self->m_root_actor = nullptr;
 
         weak_self->m_delegate.did_close_devtools_connection();
     });
+}
+
+void DevToolsServer::notify_actors_connection_closed()
+{
+    Vector<NonnullRefPtr<Actor>> actors;
+    actors.ensure_capacity(m_actor_registry.size());
+    for (auto const& actor : m_actor_registry)
+        actors.unchecked_append(actor.value);
+    for (auto& actor : actors)
+        actor->connection_closed();
 }
 
 }

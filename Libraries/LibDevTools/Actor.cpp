@@ -17,7 +17,21 @@ Actor::Actor(DevToolsServer& devtools, String name)
 {
 }
 
-Actor::~Actor() = default;
+Actor::~Actor()
+{
+    for (auto const& actor : m_owned_actors)
+        devtools().unregister_actor(actor);
+}
+
+void Actor::add_owned_actor(Actor const& actor)
+{
+    m_owned_actors.set(actor.name());
+}
+
+void Actor::remove_owned_actor(Actor const& actor)
+{
+    m_owned_actors.remove(actor.name());
+}
 
 void Actor::message_received(StringView type, JsonObject message)
 {

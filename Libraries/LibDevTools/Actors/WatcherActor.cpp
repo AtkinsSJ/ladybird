@@ -40,11 +40,17 @@ WatcherActor::WatcherActor(DevToolsServer& devtools, String name, WeakPtr<TabAct
 
 WatcherActor::~WatcherActor()
 {
+    connection_closed();
+}
+
+void WatcherActor::connection_closed()
+{
     stop_watching_source_resources();
 
     if (m_is_watching_frame_targets) {
         if (auto tab = m_tab.strong_ref())
             devtools().delegate().did_disconnect_devtools_client(tab->description());
+        m_is_watching_frame_targets = false;
     }
 }
 
@@ -53,8 +59,10 @@ void WatcherActor::handle_message(Message const& message)
     JsonObject response;
 
     if (message.type == "getNetworkParentActor"sv) {
-        if (!m_network_parent)
+        if (!m_network_parent) {
             m_network_parent = devtools().register_actor<NetworkParentActor>();
+            add_owned_actor(*m_network_parent);
+        }
 
         response.set("network"sv, m_network_parent->name());
         send_response(message, move(response));
@@ -72,8 +80,10 @@ void WatcherActor::handle_message(Message const& message)
     }
 
     if (message.type == "getTargetConfigurationActor"sv) {
-        if (!m_target_configuration)
+        if (!m_target_configuration) {
             m_target_configuration = devtools().register_actor<TargetConfigurationActor>();
+            add_owned_actor(*m_target_configuration);
+        }
 
         response.set("configuration"sv, m_target_configuration->serialize_configuration());
         send_response(message, move(response));
@@ -81,8 +91,10 @@ void WatcherActor::handle_message(Message const& message)
     }
 
     if (message.type == "getThreadConfigurationActor"sv) {
-        if (!m_thread_configuration)
+        if (!m_thread_configuration) {
             m_thread_configuration = devtools().register_actor<ThreadConfigurationActor>();
+            add_owned_actor(*m_thread_configuration);
+        }
 
         response.set("configuration"sv, m_thread_configuration->serialize_configuration());
         send_response(message, move(response));
@@ -235,6 +247,7 @@ FrameActor& WatcherActor::create_frame_target()
     auto& accessibility = devtools().register_actor<AccessibilityActor>(m_tab);
 
     auto& target = devtools().register_actor<FrameActor>(m_tab, make_weak_ptr<WatcherActor>(), css_properties, console, inspector, style_sheets, thread, accessibility);
+    add_owned_actor(target);
     m_target = target;
     m_thread = thread;
     return target;
@@ -254,6 +267,7 @@ void WatcherActor::switch_frame_target(FrameActor& previous_target, String const
 
     send_frame_target_destroyed_message(*previous_target_ref);
     previous_target_ref->stop_listening();
+    remove_owned_actor(*previous_target_ref);
     devtools().unregister_actor(previous_target_ref->name());
 
     auto& target = create_frame_target();
@@ -299,6 +313,7 @@ CookiesActor& WatcherActor::cookies_actor()
         return *cookies;
 
     m_cookies = devtools().register_actor<CookiesActor>(m_tab);
+    add_owned_actor(*m_cookies);
     return *m_cookies.strong_ref();
 }
 
@@ -308,6 +323,7 @@ IndexedDBActor& WatcherActor::indexed_db_actor()
         return *indexed_db;
 
     m_indexed_db = devtools().register_actor<IndexedDBActor>(m_tab);
+    add_owned_actor(*m_indexed_db);
     return *m_indexed_db.strong_ref();
 }
 
@@ -378,6 +394,7 @@ StorageActor& WatcherActor::local_storage_actor()
         return *storage;
 
     m_local_storage = devtools().register_actor<StorageActor>(m_tab, Web::StorageAPI::StorageEndpointType::LocalStorage);
+    add_owned_actor(*m_local_storage);
     return *m_local_storage.strong_ref();
 }
 
@@ -387,6 +404,7 @@ StorageActor& WatcherActor::session_storage_actor()
         return *storage;
 
     m_session_storage = devtools().register_actor<StorageActor>(m_tab, Web::StorageAPI::StorageEndpointType::SessionStorage);
+    add_owned_actor(*m_session_storage);
     return *m_session_storage.strong_ref();
 }
 

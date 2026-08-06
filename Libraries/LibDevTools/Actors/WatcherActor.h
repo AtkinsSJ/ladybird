@@ -19,6 +19,7 @@ public:
 
     static NonnullRefPtr<WatcherActor> create(DevToolsServer&, String name, WeakPtr<TabActor>);
     virtual ~WatcherActor() override;
+    virtual void connection_closed() override;
 
     JsonObject serialize_description() const;
     void send_frame_target_available_message();

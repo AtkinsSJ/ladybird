@@ -60,6 +60,7 @@ private:
     void on_message_received(JsonObject);
 
     void close_connection();
+    void notify_actors_connection_closed();
 
     NonnullRefPtr<Core::TCPServer> m_server;
     RefPtr<Connection> m_connection;
