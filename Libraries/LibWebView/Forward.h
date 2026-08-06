@@ -47,6 +47,7 @@ struct DebuggerBreakpointLocation;
 struct DebuggerBinding;
 struct DebuggerConfiguration;
 struct DebuggerEnvironment;
+struct DebuggerEvaluationResult;
 struct DebuggerFrame;
 struct DebuggerLocation;
 struct DebuggerObjectProperties;

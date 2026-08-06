@@ -1266,6 +1266,20 @@ public:
         on_complete(move(environments));
     }
 
+    virtual void evaluate_javascript_in_debugger_frame(DevTools::TabDescription const&, u64 frame_id, String const& source_text, OnDebuggerEvaluationComplete on_complete) const override
+    {
+        ++evaluate_javascript_in_debugger_frame_call_count;
+        last_debugger_frame_id = frame_id;
+        last_debugger_evaluation_source = source_text;
+        WebView::DebuggerValue value;
+        value.type = WebView::DebuggerValueType::Number;
+        value.number_value = 43;
+        on_complete(WebView::DebuggerEvaluationResult {
+            .value = move(value),
+            .is_throw = debugger_evaluation_is_throw,
+        });
+    }
+
     virtual void retrieve_debugger_object_properties(DevTools::TabDescription const&, u64 object_id, OnDebuggerObjectPropertiesReceived on_complete) const override
     {
         ++retrieve_debugger_object_properties_call_count;
@@ -1601,14 +1615,17 @@ public:
     mutable size_t remove_debugger_breakpoint_call_count { 0 };
     mutable size_t retrieve_debugger_source_positions_call_count { 0 };
     mutable size_t retrieve_debugger_environments_call_count { 0 };
+    mutable size_t evaluate_javascript_in_debugger_frame_call_count { 0 };
     mutable size_t retrieve_debugger_object_properties_call_count { 0 };
     mutable DevTools::DevToolsDelegate::OnDebuggerPaused on_debugger_paused;
     mutable WebView::DebuggerConfiguration debugger_configuration;
     mutable Optional<WebView::DebuggerBreakpointLocation> last_debugger_breakpoint_location;
     mutable Optional<Web::HTML::ScriptRegistry::Identifier> last_debugger_source_id;
     mutable Optional<u64> last_debugger_frame_id;
+    mutable Optional<String> last_debugger_evaluation_source;
     mutable Optional<u64> last_debugger_object_id;
     mutable bool fail_debugger_breakpoint_operation { false };
+    mutable bool debugger_evaluation_is_throw { false };
     mutable size_t resolve_dom_node_url_call_count { 0 };
     mutable size_t listen_for_console_messages_call_count { 0 };
     mutable size_t stop_listening_for_console_messages_call_count { 0 };
@@ -2637,6 +2654,7 @@ TEST_CASE(debugger_pause_and_resume)
 
     auto target = read_packet_with_type(client, "target-available-form"sv).get_object("target"sv).release_value();
     auto target_actor = actor_from(target, "actor"sv);
+    auto console_actor = actor_from(target, "consoleActor"sv);
     auto thread_actor = actor_from(target, "threadActor"sv);
 
     EXPECT_EQ(session->delegate.attach_debugger_call_count, 1u);
@@ -2732,6 +2750,34 @@ TEST_CASE(debugger_pause_and_resume)
     EXPECT_EQ(*session->delegate.last_debugger_object_id, 10u);
     EXPECT_EQ(client.request(iterator_actor, "release"sv).get_string("from"sv).value(), iterator_actor);
     spin_until(session->loop, [&] { return !session->server->actor_registry().contains(iterator_actor); });
+
+    JsonObject evaluate;
+    evaluate.set("to"sv, console_actor);
+    evaluate.set("type"sv, "evaluateJSAsync"sv);
+    evaluate.set("text"sv, "count + 1"sv);
+    evaluate.set("frameActor"sv, frame_actor);
+    auto evaluation_request = client.request(move(evaluate));
+    auto result_id = evaluation_request.get_string("resultID"sv).release_value();
+    auto evaluation = read_packet_with_type(client, "evaluationResult"sv);
+    EXPECT_EQ(evaluation.get_string("resultID"sv).value(), result_id);
+    EXPECT_EQ(evaluation.get_string("input"sv).value(), "count + 1"sv);
+    EXPECT_EQ(evaluation.get("result"sv)->get_double_with_precision_loss().value(), 43);
+    EXPECT(!evaluation.get_bool("hasException"sv).value());
+    EXPECT_EQ(session->delegate.evaluate_javascript_in_debugger_frame_call_count, 1u);
+    EXPECT_EQ(session->delegate.last_debugger_frame_id.value(), 1u);
+    EXPECT_EQ(session->delegate.last_debugger_evaluation_source.value(), "count + 1"sv);
+
+    session->delegate.debugger_evaluation_is_throw = true;
+    evaluate.set("to"sv, console_actor);
+    evaluate.set("type"sv, "evaluateJSAsync"sv);
+    evaluate.set("text"sv, "throw 43"sv);
+    evaluate.set("frameActor"sv, frame_actor);
+    evaluation_request = client.request(move(evaluate));
+    result_id = evaluation_request.get_string("resultID"sv).release_value();
+    evaluation = read_packet_with_type(client, "evaluationResult"sv);
+    EXPECT_EQ(evaluation.get_string("resultID"sv).value(), result_id);
+    EXPECT_EQ(evaluation.get("exception"sv)->get_double_with_precision_loss().value(), 43);
+    EXPECT(evaluation.get_bool("hasException"sv).value());
 
     auto resume = client.request(thread_actor, "resume"sv);
     EXPECT_EQ(resume.get_string("from"sv).value(), thread_actor);
