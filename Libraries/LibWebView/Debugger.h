@@ -17,6 +17,7 @@ namespace WebView {
 
 enum class DebuggerPauseReason : u8 {
     Breakpoint,
+    BreakpointConditionThrown,
     DebuggerStatement,
     Entry,
 };
@@ -96,6 +97,10 @@ struct DebuggerBreakpointLocation {
     bool operator==(DebuggerBreakpointLocation const&) const = default;
 };
 
+struct DebuggerBreakpointOptions {
+    Optional<Utf16String> condition;
+};
+
 struct DebuggerSourcePosition {
     u32 line { 0 };
     u32 column { 0 };
@@ -117,6 +122,7 @@ struct DebuggerFrame {
 
 struct DebuggerPause {
     DebuggerPauseReason reason { DebuggerPauseReason::Breakpoint };
+    Optional<Utf16String> reason_message;
     Vector<DebuggerFrame> frames;
 };
 
@@ -171,6 +177,12 @@ WEBVIEW_API ErrorOr<void> encode(Encoder&, WebView::DebuggerBreakpointLocation c
 
 template<>
 WEBVIEW_API ErrorOr<WebView::DebuggerBreakpointLocation> decode(Decoder&);
+
+template<>
+WEBVIEW_API ErrorOr<void> encode(Encoder&, WebView::DebuggerBreakpointOptions const&);
+
+template<>
+WEBVIEW_API ErrorOr<WebView::DebuggerBreakpointOptions> decode(Decoder&);
 
 template<>
 WEBVIEW_API ErrorOr<void> encode(Encoder&, WebView::DebuggerSourcePosition const&);
