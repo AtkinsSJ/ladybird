@@ -8,6 +8,7 @@
 #include <AK/JsonObject.h>
 #include <LibCore/EventLoop.h>
 #include <LibDevTools/Actors/AccessibilityActor.h>
+#include <LibDevTools/Actors/BreakpointListActor.h>
 #include <LibDevTools/Actors/CSSPropertiesActor.h>
 #include <LibDevTools/Actors/ConsoleActor.h>
 #include <LibDevTools/Actors/CookiesActor.h>
@@ -58,6 +59,12 @@ void WatcherActor::connection_closed()
 void WatcherActor::handle_message(Message const& message)
 {
     JsonObject response;
+
+    if (message.type == "getBreakpointListActor"sv) {
+        response.set("breakpointList"sv, breakpoint_list_actor().name());
+        send_response(message, move(response));
+        return;
+    }
 
     if (message.type == "getNetworkParentActor"sv) {
         if (!m_network_parent) {
@@ -200,6 +207,16 @@ void WatcherActor::handle_message(Message const& message)
     send_unrecognized_packet_type_error(message);
 }
 
+BreakpointListActor& WatcherActor::breakpoint_list_actor()
+{
+    if (auto actor = m_breakpoint_list.strong_ref())
+        return *actor;
+
+    m_breakpoint_list = devtools().register_actor<BreakpointListActor>(m_tab);
+    add_owned_actor(*m_breakpoint_list);
+    return *m_breakpoint_list;
+}
+
 JsonObject WatcherActor::serialize_description() const
 {
     JsonObject resources;
@@ -253,6 +270,10 @@ FrameActor& WatcherActor::create_frame_target()
     m_target = target;
     m_thread = thread;
     attach_debugger_if_possible();
+    if (auto thread_configuration = m_thread_configuration.strong_ref())
+        thread_configuration->reapply_configuration();
+    if (auto breakpoint_list = m_breakpoint_list.strong_ref())
+        breakpoint_list->reapply_breakpoints();
     return target;
 }
 
@@ -273,6 +294,7 @@ void WatcherActor::switch_frame_target(FrameActor& previous_target, String const
     remove_owned_actor(*previous_target_ref);
     devtools().unregister_actor(previous_target_ref->name());
 
+    m_debugger_is_attached = false;
     auto& target = create_frame_target();
     send_frame_target_available_message(target);
     target.send_frame_update_message();

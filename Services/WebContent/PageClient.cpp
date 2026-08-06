@@ -1732,6 +1732,16 @@ Optional<Web::HTML::ScriptRegistry::Description> PageClient::devtools_source_des
     return find_devtools_source_description(*document, source_code);
 }
 
+Optional<NonnullRefPtr<JS::SourceCode const>> PageClient::devtools_source_code(Web::HTML::ScriptRegistry::Identifier const& source_id) const
+{
+    auto* node = Web::DOM::Node::from_unique_id(source_id.document_id);
+    auto* document = as_if<Web::DOM::Document>(node);
+    if (!document)
+        return {};
+
+    return document->script_registry().source_code(source_id.script_id);
+}
+
 Optional<Web::HTML::ScriptRegistry::Content> PageClient::devtools_source_content(Web::HTML::ScriptRegistry::Identifier const& source_id) const
 {
     auto* node = Web::DOM::Node::from_unique_id(source_id.document_id);

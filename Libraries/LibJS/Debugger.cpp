@@ -66,18 +66,35 @@ bool Debugger::should_pause_on_next_bytecode_execution(Bytecode::Executable cons
 
 ErrorOr<BreakpointID> Debugger::add_breakpoint(Utf16View filename, u32 line, Optional<u32> column)
 {
+    return add_breakpoint(nullptr, filename, line, column);
+}
+
+ErrorOr<BreakpointID> Debugger::add_breakpoint(NonnullRefPtr<SourceCode const> source_code, u32 line, Optional<u32> column)
+{
+    auto filename = source_code->filename();
+    return add_breakpoint(move(source_code), filename, line, column);
+}
+
+ErrorOr<BreakpointID> Debugger::add_breakpoint(RefPtr<SourceCode const> source_code, Utf16View filename, u32 line, Optional<u32> column)
+{
     if (line == 0)
         return AK::Error::from_string_literal("Breakpoint line must be greater than zero");
 
     for (auto const& breakpoint : m_breakpoints) {
-        if (breakpoint.filename == filename && breakpoint.line == line && breakpoint.column == column)
+        if (breakpoint.source_code == source_code && breakpoint.filename == filename && breakpoint.line == line && breakpoint.column == column)
             return breakpoint.id;
     }
 
     if (m_next_breakpoint_id == NumericLimits<BreakpointID>::max())
         return AK::Error::from_string_literal("Too many breakpoints");
 
-    m_breakpoints.empend(m_next_breakpoint_id++, Utf16String::from_utf16(filename), line, column);
+    m_breakpoints.append({
+        .id = m_next_breakpoint_id++,
+        .source_code = move(source_code),
+        .filename = Utf16String::from_utf16(filename),
+        .line = line,
+        .column = column,
+    });
     auto const& breakpoint = m_breakpoints.last();
     for (auto& executable : m_executables)
         resolve_breakpoint_in_executable(breakpoint, executable);
@@ -118,8 +135,12 @@ void Debugger::register_executable(Bytecode::Executable& executable)
 
 void Debugger::resolve_breakpoint_in_executable(Breakpoint const& breakpoint, Bytecode::Executable& executable)
 {
-    if (executable.source_code->filename() != breakpoint.filename)
+    if (breakpoint.source_code) {
+        if (executable.source_code.ptr() != breakpoint.source_code.ptr())
+            return;
+    } else if (executable.source_code->filename() != breakpoint.filename) {
         return;
+    }
 
     Bytecode::SourceMapEntry const* matching_entry = nullptr;
     for (auto const& entry : executable.source_map) {

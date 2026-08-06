@@ -43,6 +43,7 @@ struct BookmarkItem;
 struct BrowserOptions;
 struct ConsoleOutput;
 struct CookieStorageKey;
+struct DebuggerBreakpointLocation;
 struct DebuggerConfiguration;
 struct DebuggerFrame;
 struct DebuggerLocation;
