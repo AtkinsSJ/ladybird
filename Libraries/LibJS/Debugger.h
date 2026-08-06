@@ -64,6 +64,7 @@ public:
 
     bool pause_execution(Bytecode::Executable&, u32 bytecode_offset, PauseReason, Optional<Value> exception = {}, bool exception_will_be_caught = false);
     void continue_execution(ResumeMode = ResumeMode::Continue);
+    // Continue after the host filters out a pause without cancelling an active step operation.
     void continue_execution_preserving_step_state();
     bool is_paused() const { return m_is_paused; }
     ThrowCompletionOr<Value> evaluate_in_frame(ExecutionContext&, Utf16View source_text);

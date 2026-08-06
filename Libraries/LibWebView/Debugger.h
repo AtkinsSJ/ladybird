@@ -31,6 +31,11 @@ enum class DebuggerResumeMode : u8 {
     StepOver,
 };
 
+enum class DebuggerBlackboxingOperation : u8 {
+    Blackbox,
+    Unblackbox,
+};
+
 enum class DebuggerValueType : u8 {
     Undefined,
     Null,
@@ -117,6 +122,15 @@ struct DebuggerBreakpointOptions {
 struct DebuggerSourcePosition {
     u32 line { 0 };
     u32 column { 0 };
+
+    bool operator==(DebuggerSourcePosition const&) const = default;
+};
+
+struct DebuggerBlackboxRange {
+    DebuggerSourcePosition start;
+    DebuggerSourcePosition end;
+
+    bool operator==(DebuggerBlackboxRange const&) const = default;
 };
 
 struct DebuggerLocation {
@@ -203,6 +217,12 @@ WEBVIEW_API ErrorOr<void> encode(Encoder&, WebView::DebuggerSourcePosition const
 
 template<>
 WEBVIEW_API ErrorOr<WebView::DebuggerSourcePosition> decode(Decoder&);
+
+template<>
+WEBVIEW_API ErrorOr<void> encode(Encoder&, WebView::DebuggerBlackboxRange const&);
+
+template<>
+WEBVIEW_API ErrorOr<WebView::DebuggerBlackboxRange> decode(Decoder&);
 
 template<>
 WEBVIEW_API ErrorOr<void> encode(Encoder&, WebView::DebuggerLocation const&);

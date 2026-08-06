@@ -238,6 +238,7 @@ void ThreadActor::did_pause(WebView::DebuggerPause pause)
             youngest_frame_actor = &frame_actor;
     }
     VERIFY(youngest_frame_actor);
+    m_paused_source_id = pause.frames.first().location.source.id;
 
     auto reason = [&] {
         switch (pause.reason) {
@@ -287,6 +288,7 @@ void ThreadActor::clear_pause_actors()
     m_pause_scoped_actors.clear();
     m_frame_actors.clear();
     m_object_actors.clear();
+    m_paused_source_id.clear();
 }
 
 void ThreadActor::release_pause_actor(Actor& actor)
@@ -628,7 +630,7 @@ SourceActor& ThreadActor::source_actor_for(Web::HTML::ScriptRegistry::Descriptio
             return *source_actor;
     }
 
-    auto& actor = devtools().register_actor<SourceActor>(m_tab, source);
+    auto& actor = devtools().register_actor<SourceActor>(m_tab, m_watcher, source);
     m_source_actors.set(source.id, actor);
     return actor;
 }
