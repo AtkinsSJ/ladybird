@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/Enumerate.h>
 #include <AK/NumericLimits.h>
 #include <LibCore/EventLoop.h>
 #include <LibJS/Bytecode/Executable.h>
@@ -227,6 +228,28 @@ Vector<WebView::DebuggerEnvironment> DevToolsDebugger::environments_for_frame(Pa
         debugger_environment.bindings = move(bindings);
         environments.append(move(debugger_environment));
     };
+
+    if (context->executable && !context->executable->local_variable_names.is_empty()) {
+        WebView::DebuggerEnvironment local_environment;
+        local_environment.id = m_next_environment_id++;
+        local_environment.type = WebView::DebuggerEnvironmentType::Function;
+        local_environment.function_name = context->executable->name.to_utf16_string();
+
+        HashTable<Utf16FlyString> local_names;
+        for (auto const& [index, name] : enumerate(context->executable->local_variable_names)) {
+            if (name.is_empty() || local_names.contains(name))
+                continue;
+            local_names.set(name);
+            local_environment.bindings.append({
+                .name = name.to_utf16_string(),
+                .value = serialize_value(context->local_variables()[index]),
+                // FIXME: Preserve binding mutability and lexical scope metadata in bytecode executables.
+                .writable = true,
+            });
+        }
+        if (!local_environment.bindings.is_empty())
+            environments.append(move(local_environment));
+    }
 
     for (auto* environment = context->lexical_environment.ptr(); environment; environment = environment->outer_environment()) {
         if (is<JS::GlobalEnvironment>(*environment)) {
