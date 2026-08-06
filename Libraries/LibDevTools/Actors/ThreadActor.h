@@ -51,7 +51,7 @@ private:
     JsonObject serialize_property_descriptor(WebView::DebuggerProperty const&);
     void clear_pause_actors();
     void attach();
-    void resume();
+    void resume(WebView::DebuggerResumeMode);
     void send_wrong_state_error(Message const&, StringView message);
 
     WeakPtr<TabActor> m_tab;
