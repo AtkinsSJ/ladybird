@@ -16,6 +16,7 @@
 #include <AK/Variant.h>
 #include <LibIPC/Forward.h>
 #include <LibJS/Forward.h>
+#include <LibJS/Position.h>
 #include <LibURL/URL.h>
 #include <LibWeb/Export.h>
 #include <LibWeb/Forward.h>
@@ -70,6 +71,7 @@ public:
     Optional<Script const&> script_for_source_code(JS::SourceCode const&) const;
     Optional<NonnullRefPtr<JS::SourceCode const>> source_code(u64 script_id) const;
     Optional<Content> script_content(u64 script_id, Utf16View document_source) const;
+    Vector<JS::Position> breakpoint_positions(u64 script_id) const;
 
 private:
     OrderedHashMap<u64, Script> m_scripts;

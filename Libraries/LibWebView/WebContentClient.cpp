@@ -1197,6 +1197,15 @@ void WebContentClient::did_complete_debugger_breakpoint_operation(u64 page_id, u
         view->did_complete_debugger_breakpoint_operation(request_id, move(error));
 }
 
+void WebContentClient::did_get_debugger_source_positions(u64 page_id, u64 request_id, Vector<DebuggerSourcePosition> positions)
+{
+    if (auto view = view_for_page_id(page_id); view.has_value()) {
+        auto callback = view->m_pending_debugger_source_positions_requests.take(request_id);
+        if (callback.has_value())
+            (*callback)(move(positions));
+    }
+}
+
 void WebContentClient::did_resolve_dom_node_url(u64 page_id, u64 request_id, String resolved_url)
 {
     if (auto view = view_for_page_id(page_id); view.has_value()) {

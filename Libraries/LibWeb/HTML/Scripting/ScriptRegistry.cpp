@@ -79,6 +79,15 @@ Optional<ScriptRegistry::Content> ScriptRegistry::script_content(u64 script_id, 
     return source_content(script->value);
 }
 
+Vector<JS::Position> ScriptRegistry::breakpoint_positions(u64 script_id) const
+{
+    auto script = m_scripts.find(script_id);
+    if (script == m_scripts.end())
+        return {};
+
+    return script->value.content.get<JavaScriptSource>().source_code->breakpoint_positions();
+}
+
 }
 
 namespace IPC {
