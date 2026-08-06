@@ -31,8 +31,11 @@ public:
     Utf16String source_text_from_offsets(size_t start_offset, size_t length) const;
 
     SourceRange range_from_offsets(u32 start_offset, u32 end_offset) const;
+    Vector<Position> breakpoint_positions() const;
 
 private:
+    friend class Bytecode::Executable;
+
     SourceCode(Utf16String filename, Utf16String code);
     SourceCode(Utf16String filename, size_t length_in_code_units, ByteString source_encoding, Core::ImmutableBytes source_bytes);
     void ensure_code() const;
@@ -70,6 +73,10 @@ private:
     // utf16_data() for use by the Rust compilation pipeline.
     Vector<u16> mutable m_utf16_data_cache;
     Optional<bool> mutable m_source_bytes_can_be_sliced_by_code_unit_offsets;
+
+    void register_executable(Bytecode::Executable&) const;
+    void unregister_executable(Bytecode::Executable&) const;
+    Vector<Bytecode::Executable*> mutable m_executables;
 
     // OPTIMIZATION: For byte-backed UTF-8 sources containing non-ASCII, we lazily build a map of the spans where
     //               UTF-16 code unit offsets diverge from byte offsets, so source text extraction can slice the

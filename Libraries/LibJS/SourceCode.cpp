@@ -7,14 +7,52 @@
 #include <AK/AllOf.h>
 #include <AK/BinarySearch.h>
 #include <AK/CharacterTypes.h>
+#include <AK/QuickSort.h>
 #include <AK/Utf16StringBuilder.h>
 #include <AK/Utf8View.h>
+#include <LibJS/Bytecode/Executable.h>
 #include <LibJS/SourceCode.h>
 #include <LibJS/SourceRange.h>
 #include <LibJS/Token.h>
 #include <LibTextCodec/Decoder.h>
 
 namespace JS {
+
+void SourceCode::register_executable(Bytecode::Executable& executable) const
+{
+    if (!m_executables.contains_slow(&executable))
+        m_executables.append(&executable);
+}
+
+void SourceCode::unregister_executable(Bytecode::Executable& executable) const
+{
+    m_executables.remove_first_matching([&](auto* candidate) { return candidate == &executable; });
+}
+
+Vector<Position> SourceCode::breakpoint_positions() const
+{
+    Vector<Position> positions;
+    for (auto const* executable : m_executables) {
+        for (auto const& entry : executable->source_map) {
+            if (entry.line == 0)
+                continue;
+            positions.append({ entry.line, entry.column });
+        }
+    }
+
+    quick_sort(positions, [](auto const& left, auto const& right) {
+        return left.line < right.line || (left.line == right.line && left.column < right.column);
+    });
+
+    Vector<Position> unique_positions;
+    unique_positions.ensure_capacity(positions.size());
+    for (auto const& position : positions) {
+        if (!unique_positions.is_empty() && unique_positions.last().line == position.line && unique_positions.last().column == position.column)
+            continue;
+        unique_positions.append(position);
+    }
+    return unique_positions;
+}
 
 static bool ascii_source_bytes_decode_to_same_code_units(StringView standardized_encoding, ReadonlyBytes bytes)
 {

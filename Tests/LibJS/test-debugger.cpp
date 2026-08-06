@@ -100,6 +100,30 @@ TEST_CASE(source_specific_breakpoints_do_not_match_other_sources_with_the_same_f
     EXPECT(!second_executable->has_debugger_breakpoint(breakpoint_id));
 }
 
+TEST_CASE(source_code_reports_breakpoint_positions)
+{
+    auto vm = JS::VM::create();
+    auto root_execution_context = JS::create_simple_execution_context<JS::GlobalObject>(*vm);
+    auto& realm = *root_execution_context->realm;
+
+    auto script_or_error = JS::Script::parse("let first = 1; first++;\nlet second = 2;\n"sv, realm, "positions.js"sv);
+    VERIFY(!script_or_error.is_error());
+
+    auto* executable = script_or_error.value()->cached_executable();
+    VERIFY(executable);
+    auto positions = executable->source_code->breakpoint_positions();
+    EXPECT(!positions.is_empty());
+
+    for (size_t index = 1; index < positions.size(); ++index) {
+        auto const& previous = positions[index - 1];
+        auto const& current = positions[index];
+        EXPECT(previous.line < current.line || (previous.line == current.line && previous.column < current.column));
+    }
+
+    EXPECT(positions.find_if([](auto const& position) { return position.line == 1 && position.column == 1; }) != positions.end());
+    EXPECT(positions.find_if([](auto const& position) { return position.line == 2; }) != positions.end());
+}
+
 TEST_CASE(breakpoints_resolve_when_an_existing_executable_runs)
 {
     auto vm = JS::VM::create();
