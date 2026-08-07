@@ -206,7 +206,7 @@ SearchableText SearchableText::collect(Viewport& viewport)
         VERIFY(parent_inherited_text_values);
 
         auto const append_text = [&](Utf16View text_to_append, size_t dom_start_offset) {
-            auto const white_space_collapse = parent_inherited_text_values->white_space_collapse;
+            auto const white_space_collapse = parent_inherited_text_values->white_space_collapse_value();
             auto const should_collapse = first_is_one_of(
                 white_space_collapse,
                 CSS::WhiteSpaceCollapse::Collapse,
@@ -396,7 +396,7 @@ SearchableText SearchableText::collect(Viewport& viewport)
                 auto const segment_end = segment_index + 1 < block.segments.size()
                     ? block.segments[segment_index + 1].start_offset
                     : block_text.length_in_code_units();
-                auto const white_space_collapse = parent_inherited_text_values->white_space_collapse;
+                auto const white_space_collapse = parent_inherited_text_values->white_space_collapse_value();
                 auto const should_collapse = first_is_one_of(
                     white_space_collapse,
                     CSS::WhiteSpaceCollapse::Collapse,
