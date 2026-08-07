@@ -490,6 +490,7 @@ protected:
     void apply_zoom_for_current_host();
 
     void handle_resize();
+    void fail_pending_debugger_requests();
     void set_page_background_color_to_system_canvas(bool dark);
     void set_page_background_color(Gfx::Color);
     Gfx::Color preferred_canvas_background_color() const;
@@ -608,6 +609,7 @@ protected:
     RefPtr<Action> m_media_exit_fullscreen_action;
 
     Queue<Web::InputEvent> m_pending_input_events;
+    bool m_debugger_is_attached { false };
 
     RefPtr<Core::Timer> m_backing_store_shrink_timer;
 
