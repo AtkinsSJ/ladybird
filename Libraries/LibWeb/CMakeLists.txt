@@ -807,6 +807,7 @@ set(SOURCES
     Layout/Node.cpp
     Layout/NodeArena.cpp
     Layout/ScrollableOverflow.cpp
+    Layout/SearchableText.cpp
     Layout/TextNode.cpp
     Layout/TextOffsetMapping.cpp
     Layout/TreeBuilder.cpp
