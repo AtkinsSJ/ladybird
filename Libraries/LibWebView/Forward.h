@@ -37,6 +37,8 @@ class WebContentClient;
 class WebWorkerClient;
 class WebUI;
 
+enum class PausedDebuggerOverlayAction : u8;
+
 struct Attribute;
 struct AutocompleteEngine;
 struct BookmarkItem;

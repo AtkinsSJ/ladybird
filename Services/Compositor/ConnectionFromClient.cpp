@@ -10,6 +10,7 @@
 #include <LibCore/Process.h>
 #include <LibCore/System.h>
 #include <LibIPC/Transport.h>
+#include <LibWebView/PausedDebuggerOverlay.h>
 
 namespace Compositor {
 
@@ -72,6 +73,16 @@ void ConnectionFromClient::create_context(Web::Compositor::CompositorContextId c
 void ConnectionFromClient::viewport_size_updated(Web::Compositor::CompositorContextId context_id, Gfx::IntSize viewport_size, Web::Compositor::WindowResizingInProgress window_resize_in_progress)
 {
     m_compositor_state->viewport_size_updated(context_id, viewport_size, window_resize_in_progress);
+}
+
+void ConnectionFromClient::set_paused_debugger_overlay(Web::Compositor::CompositorContextId context_id, bool visible, double device_pixel_ratio, Optional<String> font_family, Optional<u8> hovered_action_value)
+{
+    Optional<WebView::PausedDebuggerOverlayAction> hovered_action;
+    if (hovered_action_value.has_value()) {
+        VERIFY(*hovered_action_value <= to_underlying(WebView::PausedDebuggerOverlayAction::Continue));
+        hovered_action = static_cast<WebView::PausedDebuggerOverlayAction>(*hovered_action_value);
+    }
+    m_compositor_state->set_paused_debugger_overlay(context_id, visible, device_pixel_ratio, move(font_family), hovered_action);
 }
 
 void ConnectionFromClient::set_display_metadata(Web::Compositor::CompositorContextId context_id, Optional<u64> display_id, double refresh_rate)
