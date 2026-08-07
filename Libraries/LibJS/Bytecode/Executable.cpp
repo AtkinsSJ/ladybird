@@ -306,13 +306,9 @@ Executable::Executable(
     object_property_iterator_caches.resize(number_of_object_property_iterator_caches);
     asm_constants_size = this->constants.size();
     asm_constants_data = this->constants.data();
-    this->source_code->register_executable(*this);
 }
 
-Executable::~Executable()
-{
-    source_code->unregister_executable(*this);
-}
+Executable::~Executable() = default;
 
 static SourceMapEntry const* first_real_source_map_entry(Executable const& executable)
 {

@@ -7,6 +7,7 @@
 #include <LibJS/Debugger.h>
 #include <LibJS/Runtime/GlobalObject.h>
 #include <LibJS/Runtime/VM.h>
+#include <LibJS/RustIntegration.h>
 #include <LibJS/Script.h>
 #include <LibTest/TestCase.h>
 
@@ -298,28 +299,36 @@ TEST_CASE(source_specific_breakpoints_do_not_match_other_sources_with_the_same_f
     EXPECT(!second_executable->has_debugger_breakpoint(breakpoint_id));
 }
 
-TEST_CASE(source_code_reports_breakpoint_positions)
+TEST_CASE(debugger_source_reports_breakpoint_positions_in_lazy_functions)
 {
     auto vm = JS::VM::create();
     auto root_execution_context = JS::create_simple_execution_context<JS::GlobalObject>(*vm);
     auto& realm = *root_execution_context->realm;
 
-    auto script_or_error = JS::Script::parse("let first = 1; first++;\nlet second = 2;\n"sv, realm, "positions.js"sv);
+    auto script_or_error = JS::Script::parse(R"(
+        /top-level/;
+        button.onclick = function () {
+            /lazy/;
+            alert("Hi!");
+            alert("Hello!");
+            alert("Hey!");
+        };
+    )"sv,
+        realm, "lazy-positions.js"sv);
     VERIFY(!script_or_error.is_error());
 
     auto* executable = script_or_error.value()->cached_executable();
     VERIFY(executable);
-    auto positions = executable->source_code->breakpoint_positions();
-    EXPECT(!positions.is_empty());
+    auto positions = JS::RustIntegration::breakpoint_positions_for_source(*executable->source_code, JS::RustIntegration::ProgramType::Script, 1);
+    for (u32 line = 5; line <= 7; ++line)
+        EXPECT(positions.find_if([line](auto const& position) { return position.line == line; }) != positions.end());
+}
 
-    for (size_t index = 1; index < positions.size(); ++index) {
-        auto const& previous = positions[index - 1];
-        auto const& current = positions[index];
-        EXPECT(previous.line < current.line || (previous.line == current.line && previous.column < current.column));
-    }
-
-    EXPECT(positions.find_if([](auto const& position) { return position.line == 1 && position.column == 1; }) != positions.end());
-    EXPECT(positions.find_if([](auto const& position) { return position.line == 2; }) != positions.end());
+TEST_CASE(module_breakpoint_positions_apply_the_source_line_offset)
+{
+    auto source_code = JS::SourceCode::create("inline-module.js"_utf16, "export const value = 1;"_utf16);
+    auto positions = JS::RustIntegration::breakpoint_positions_for_source(*source_code, JS::RustIntegration::ProgramType::Module, 20);
+    EXPECT(positions.find_if([](auto const& position) { return position.line == 20; }) != positions.end());
 }
 
 TEST_CASE(breakpoints_resolve_when_an_existing_executable_runs)
