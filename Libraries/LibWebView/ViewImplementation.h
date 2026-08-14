@@ -439,8 +439,9 @@ public:
     Menu& bookmark_context_menu() { return *m_bookmark_context_menu; }
     Menu& bookmark_folder_context_menu() { return *m_bookmark_folder_context_menu; }
 
-    void did_request_page_context_menu(Badge<WebContentClient>, Gfx::IntPoint content_position, Web::ContextMenuForInputEventsTarget for_input_events_target);
-    void did_request_link_context_menu(Badge<WebContentClient>, Gfx::IntPoint content_position, URL::URL url);
+    void did_request_page_context_menu(Badge<WebContentClient>, Gfx::IntPoint content_position, Web::ContextMenuForInputEventsTarget for_input_events_target, Optional<u64> text_fragment_generation_id);
+    void did_request_link_context_menu(Badge<WebContentClient>, Gfx::IntPoint content_position, URL::URL url, Optional<u64> text_fragment_generation_id);
+    void did_generate_text_fragment_url(u64 request_id, Optional<URL::URL>);
     void did_request_image_context_menu(Badge<WebContentClient>, Gfx::IntPoint content_position, URL::URL url, Optional<Gfx::ShareableBitmap> bitmap);
     void did_request_media_context_menu(Badge<WebContentClient>, Gfx::IntPoint content_position, Web::Page::MediaContextMenu menu);
 
@@ -551,6 +552,7 @@ protected:
     void complete_external_url_request();
     void process_next_external_url_request();
     void update_look_up_selected_text_action(Optional<DictionaryLookup> const& lookup, Gfx::IntPoint content_position);
+    void request_text_fragment_url(Optional<u64> generation_id);
     enum class PromptForPath : u8 {
         No,
         Yes,
@@ -614,6 +616,7 @@ protected:
     Gfx::IntPoint m_look_up_position;
 
     RefPtr<Action> m_search_selected_text_action;
+    RefPtr<Action> m_copy_link_to_highlight_action;
     Optional<String> m_search_text;
 
     RefPtr<Action> m_take_visible_screenshot_action;
@@ -626,6 +629,9 @@ protected:
     RefPtr<Action> m_download_linked_file_as_action;
     RefPtr<Action> m_copy_url_action;
     URL::URL m_context_menu_url;
+    Optional<URL::URL> m_text_fragment_url;
+    u64 m_next_text_fragment_url_request_id { 1 };
+    Optional<u64> m_pending_text_fragment_url_request_id;
 
     RefPtr<Action> m_open_image_action;
     RefPtr<Action> m_save_image_action;

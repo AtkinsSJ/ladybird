@@ -2101,6 +2101,14 @@ Messages::WebContentServer::GetSelectedTextResponse ConnectionFromClient::get_se
     return ByteString {};
 }
 
+void ConnectionFromClient::generate_text_fragment_url(u64 page_id, u64 request_id, u64 generation_id, URL::URL current_url)
+{
+    Optional<URL::URL> generated_url;
+    if (auto page = this->page(page_id); page.has_value())
+        generated_url = page->generate_text_fragment_url(generation_id, current_url);
+    async_did_generate_text_fragment_url(page_id, request_id, move(generated_url));
+}
+
 static WebView::DictionaryLookupTextStyle dictionary_lookup_text_style_from_layout_node(Web::Layout::Node const& layout_node, double zoom_level)
 {
     auto const& font = layout_node.first_available_font();

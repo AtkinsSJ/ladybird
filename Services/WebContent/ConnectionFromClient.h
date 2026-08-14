@@ -211,6 +211,7 @@ private:
     virtual void request_internal_page_info(u64 page_id, WebView::PageInfoType) override;
 
     virtual Messages::WebContentServer::GetSelectedTextResponse get_selected_text(u64 page_id) override;
+    virtual void generate_text_fragment_url(u64 page_id, u64 request_id, u64 generation_id, URL::URL current_url) override;
     virtual Messages::WebContentServer::GetSelectedTextForLookupResponse get_selected_text_for_lookup(u64 page_id) override;
     virtual Messages::WebContentServer::SelectWordForDictionaryLookupResponse select_word_for_dictionary_lookup(u64 page_id, Web::DevicePixelPoint position) override;
     virtual Messages::WebContentServer::CutSelectedTextResponse cut_selected_text(u64 page_id) override;

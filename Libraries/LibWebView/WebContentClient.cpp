@@ -926,16 +926,22 @@ void WebContentClient::did_request_external_url(u64 page_id, URL::URL url, URL::
         view->handle_external_url({}, move(url), move(initiator_origin), has_transient_activation);
 }
 
-void WebContentClient::did_request_context_menu(u64 page_id, Gfx::IntPoint content_position, Web::ContextMenuForInputEventsTarget for_input_events_target)
+void WebContentClient::did_request_context_menu(u64 page_id, Gfx::IntPoint content_position, Web::ContextMenuForInputEventsTarget for_input_events_target, Optional<u64> text_fragment_generation_id)
 {
     if (auto view = view_for_page_id(page_id); view.has_value())
-        view->did_request_page_context_menu({}, content_position, for_input_events_target);
+        view->did_request_page_context_menu({}, content_position, for_input_events_target, text_fragment_generation_id);
 }
 
-void WebContentClient::did_request_link_context_menu(u64 page_id, Gfx::IntPoint content_position, URL::URL url, ByteString, unsigned)
+void WebContentClient::did_request_link_context_menu(u64 page_id, Gfx::IntPoint content_position, URL::URL url, ByteString, unsigned, Optional<u64> text_fragment_generation_id)
 {
     if (auto view = view_for_page_id(page_id); view.has_value())
-        view->did_request_link_context_menu({}, content_position, move(url));
+        view->did_request_link_context_menu({}, content_position, move(url), text_fragment_generation_id);
+}
+
+void WebContentClient::did_generate_text_fragment_url(u64 page_id, u64 request_id, Optional<URL::URL> url)
+{
+    if (auto view = view_for_page_id(page_id); view.has_value())
+        view->did_generate_text_fragment_url(request_id, move(url));
 }
 
 void WebContentClient::did_request_image_context_menu(u64 page_id, Gfx::IntPoint content_position, URL::URL url, ByteString, unsigned, Optional<Gfx::ShareableBitmap> bitmap)

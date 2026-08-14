@@ -2855,6 +2855,14 @@ void ViewImplementation::initialize_context_menus()
     });
     m_search_selected_text_action->set_visible(false);
 
+    m_copy_link_to_highlight_action = Action::create("Copy Link to Highlight"sv, ActionID::CopyLinkToHighlight, [this]() {
+        if (!m_text_fragment_url.has_value())
+            return;
+        Application::the().insert_clipboard_entry({ url_text_to_copy(*m_text_fragment_url), "text/plain"_string });
+    });
+    m_copy_link_to_highlight_action->set_visible(false);
+    m_copy_link_to_highlight_action->set_enabled(false);
+
     m_look_up_selected_text_action = Action::create("Look Up"sv, ActionID::LookUpSelectedText, [this] {
         if (!m_look_up.has_value() || !on_request_dictionary_lookup)
             return;
@@ -2986,6 +2994,7 @@ void ViewImplementation::initialize_context_menus()
     add_text_edit_actions(*m_page_context_menu);
     m_page_context_menu->add_separator();
     m_page_context_menu->add_action(*m_search_selected_text_action);
+    m_page_context_menu->add_action(*m_copy_link_to_highlight_action);
     m_page_context_menu->add_separator();
     m_page_context_menu->add_action(*m_take_visible_screenshot_action);
     m_page_context_menu->add_action(*m_take_full_screenshot_action);
@@ -3000,6 +3009,7 @@ void ViewImplementation::initialize_context_menus()
     m_link_context_menu->add_action(*m_download_linked_file_as_action);
     m_link_context_menu->add_separator();
     m_link_context_menu->add_action(*m_copy_url_action);
+    m_link_context_menu->add_action(*m_copy_link_to_highlight_action);
 
     m_selected_text_link_context_menu = Menu::create("Selected Text Link Context Menu"sv);
     m_selected_text_link_context_menu->add_action(*m_look_up_selected_text_action);
@@ -3008,6 +3018,7 @@ void ViewImplementation::initialize_context_menus()
     add_text_edit_actions(*m_selected_text_link_context_menu);
     m_selected_text_link_context_menu->add_separator();
     m_selected_text_link_context_menu->add_action(*m_search_selected_text_action);
+    m_selected_text_link_context_menu->add_action(*m_copy_link_to_highlight_action);
 
     m_image_context_menu = Menu::create("Image Context Menu"sv);
     m_image_context_menu->add_action(*m_look_up_selected_text_action);
@@ -3170,7 +3181,30 @@ void ViewImplementation::update_look_up_selected_text_action(Optional<Dictionary
     m_look_up_selected_text_action->set_visible(m_look_up.has_value());
 }
 
-void ViewImplementation::did_request_page_context_menu(Badge<WebContentClient>, Gfx::IntPoint content_position, Web::ContextMenuForInputEventsTarget for_input_events_target)
+void ViewImplementation::request_text_fragment_url(Optional<u64> generation_id)
+{
+    m_text_fragment_url.clear();
+    m_pending_text_fragment_url_request_id.clear();
+    m_copy_link_to_highlight_action->set_enabled(false);
+    m_copy_link_to_highlight_action->set_visible(generation_id.has_value());
+    if (!generation_id.has_value())
+        return;
+
+    auto request_id = m_next_text_fragment_url_request_id++;
+    m_pending_text_fragment_url_request_id = request_id;
+    client().async_generate_text_fragment_url(page_id(), request_id, *generation_id, m_url);
+}
+
+void ViewImplementation::did_generate_text_fragment_url(u64 request_id, Optional<URL::URL> url)
+{
+    if (!m_pending_text_fragment_url_request_id.has_value() || *m_pending_text_fragment_url_request_id != request_id)
+        return;
+    m_pending_text_fragment_url_request_id.clear();
+    m_text_fragment_url = move(url);
+    m_copy_link_to_highlight_action->set_enabled(m_text_fragment_url.has_value());
+}
+
+void ViewImplementation::did_request_page_context_menu(Badge<WebContentClient>, Gfx::IntPoint content_position, Web::ContextMenuForInputEventsTarget for_input_events_target, Optional<u64> text_fragment_generation_id)
 {
     auto& cut_selection_action = Application::the().cut_selection_action();
     cut_selection_action.set_visible(for_input_events_target == Web::ContextMenuForInputEventsTarget::Yes);
@@ -3183,6 +3217,7 @@ void ViewImplementation::did_request_page_context_menu(Badge<WebContentClient>, 
     m_search_text = search_engine.has_value() ? selected_text : OptionalNone {};
     auto selected_text_url = selected_text.has_value() ? url_from_text(*selected_text) : OptionalNone {};
     update_look_up_selected_text_action(lookup, content_position);
+    request_text_fragment_url(text_fragment_generation_id);
 
     ScopeGuard guard { [&]() {
         cut_selection_action.set_visible(true);
@@ -3207,10 +3242,11 @@ void ViewImplementation::did_request_page_context_menu(Badge<WebContentClient>, 
         m_page_context_menu->on_activation(to_widget_position(content_position));
 }
 
-void ViewImplementation::did_request_link_context_menu(Badge<WebContentClient>, Gfx::IntPoint content_position, URL::URL url)
+void ViewImplementation::did_request_link_context_menu(Badge<WebContentClient>, Gfx::IntPoint content_position, URL::URL url, Optional<u64> text_fragment_generation_id)
 {
     m_context_menu_url = move(url);
     update_look_up_selected_text_action(on_request_dictionary_lookup ? selected_text_for_dictionary_lookup() : OptionalNone {}, content_position);
+    request_text_fragment_url(text_fragment_generation_id);
 
     m_open_in_new_tab_action->set_text("Open in New Tab"sv);
 

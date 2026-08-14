@@ -40,6 +40,7 @@ enum class ActionID {
 
     LookUpSelectedText,
     SearchSelectedText,
+    CopyLinkToHighlight,
 
     TakeVisibleScreenshot,
     TakeFullScreenshot,

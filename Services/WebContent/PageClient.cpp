@@ -34,6 +34,7 @@
 #include <LibWeb/DOM/MutationType.h>
 #include <LibWeb/DOM/Node.h>
 #include <LibWeb/DOM/NodeList.h>
+#include <LibWeb/DOM/Range.h>
 #include <LibWeb/Fetch/Infrastructure/FetchController.h>
 #include <LibWeb/Fetch/Infrastructure/HTTP/Bodies.h>
 #include <LibWeb/Geolocation/GeolocationCoordinates.h>
@@ -45,6 +46,7 @@
 #include <LibWeb/HTML/LocalTraversableNavigable.h>
 #include <LibWeb/HTML/Scripting/ClassicScript.h>
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
+#include <LibWeb/HTML/TextDirectiveGenerator.h>
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/HighResolutionTime/TimeOrigin.h>
 #include <LibWeb/InvalidateDisplayList.h>
@@ -159,6 +161,8 @@ void PageClient::visit_edges(JS::Cell::Visitor& visitor)
         visitor.visit(controller.value);
     for (auto& reader : m_download_readers)
         visitor.visit(reader.value);
+    for (auto& range : m_pending_text_fragment_generation_ranges)
+        visitor.visit(range.value);
     m_pending_dom_mutations.for_each([&](auto& pending_mutation) {
         visitor.visit(pending_mutation.target);
     });
@@ -752,14 +756,39 @@ void PageClient::page_did_set_device_pixel_ratio_for_testing(double ratio)
     set_viewport(m_viewport_size, ratio);
 }
 
-void PageClient::page_did_request_context_menu(Web::CSSPixelPoint content_position, Web::ContextMenuForInputEventsTarget for_input_events_target)
+Optional<u64> PageClient::prepare_text_fragment_generation(GC::Ptr<Web::DOM::Range> range)
 {
-    client().async_did_request_context_menu(m_id, page().css_to_device_point(content_position).to_type<int>(), for_input_events_target);
+    if (!range)
+        return {};
+
+    auto generation_id = m_next_text_fragment_generation_id++;
+    m_pending_text_fragment_generation_ranges.set(generation_id, *range);
+    return generation_id;
 }
 
-void PageClient::page_did_request_link_context_menu(Web::CSSPixelPoint content_position, URL::URL const& url, ByteString const& target, unsigned modifiers)
+Optional<URL::URL> PageClient::generate_text_fragment_url(u64 generation_id, URL::URL const& current_url)
 {
-    client().async_did_request_link_context_menu(m_id, page().css_to_device_point(content_position).to_type<int>(), url, target, modifiers);
+    auto range = m_pending_text_fragment_generation_ranges.take(generation_id);
+    if (!range.has_value())
+        return {};
+
+    auto* document = page().top_level_browsing_context().active_document();
+    if (!document || &(*range)->start_container()->document() != document || &(*range)->end_container()->document() != document)
+        return {};
+
+    return Web::HTML::generate_text_fragment_url(*document, **range, current_url);
+}
+
+void PageClient::page_did_request_context_menu(Web::CSSPixelPoint content_position, Web::ContextMenuForInputEventsTarget for_input_events_target, GC::Ptr<Web::DOM::Range> selected_text_range)
+{
+    auto text_fragment_generation_id = prepare_text_fragment_generation(selected_text_range);
+    client().async_did_request_context_menu(m_id, page().css_to_device_point(content_position).to_type<int>(), for_input_events_target, text_fragment_generation_id);
+}
+
+void PageClient::page_did_request_link_context_menu(Web::CSSPixelPoint content_position, URL::URL const& url, ByteString const& target, unsigned modifiers, GC::Ptr<Web::DOM::Range> selected_text_range)
+{
+    auto text_fragment_generation_id = prepare_text_fragment_generation(selected_text_range);
+    client().async_did_request_link_context_menu(m_id, page().css_to_device_point(content_position).to_type<int>(), url, target, modifiers, text_fragment_generation_id);
 }
 
 void PageClient::page_did_request_image_context_menu(Web::CSSPixelPoint content_position, URL::URL const& url, ByteString const& target, unsigned modifiers, Optional<Gfx::Bitmap const*> bitmap_pointer)

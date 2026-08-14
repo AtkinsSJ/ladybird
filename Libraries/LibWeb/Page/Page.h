@@ -560,8 +560,8 @@ public:
     virtual void page_did_unregister_download([[maybe_unused]] u64 download_id) { }
     virtual bool page_is_download_canceled([[maybe_unused]] u64 download_id) const { return false; }
     virtual void page_did_request_cursor_change(Gfx::Cursor const&) { }
-    virtual void page_did_request_context_menu(CSSPixelPoint, ContextMenuForInputEventsTarget) { }
-    virtual void page_did_request_link_context_menu(CSSPixelPoint, URL::URL const&, [[maybe_unused]] ByteString const& target, [[maybe_unused]] unsigned modifiers) { }
+    virtual void page_did_request_context_menu(CSSPixelPoint, ContextMenuForInputEventsTarget, GC::Ptr<DOM::Range>) { }
+    virtual void page_did_request_link_context_menu(CSSPixelPoint, URL::URL const&, [[maybe_unused]] ByteString const& target, [[maybe_unused]] unsigned modifiers, GC::Ptr<DOM::Range>) { }
     virtual void page_did_request_image_context_menu(CSSPixelPoint, URL::URL const&, [[maybe_unused]] ByteString const& target, [[maybe_unused]] unsigned modifiers, Optional<Gfx::Bitmap const*>) { }
     virtual void page_did_request_media_context_menu(CSSPixelPoint, [[maybe_unused]] ByteString const& target, [[maybe_unused]] unsigned modifiers, Page::MediaContextMenu const&) { }
     virtual void page_did_click_link(URL::URL const&, [[maybe_unused]] ByteString const& target, [[maybe_unused]] unsigned modifiers) { }

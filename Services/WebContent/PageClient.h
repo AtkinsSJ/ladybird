@@ -104,6 +104,7 @@ public:
     void set_geolocation_emulated_position(WebView::GeolocationPositionData const&, Optional<u16> error_code);
     void apply_pending_geolocation_emulated_position();
     void geolocation_position_response(u64 request_id, WebView::GeolocationPositionData const&, Optional<u16> error_code);
+    Optional<URL::URL> generate_text_fragment_url(u64 generation_id, URL::URL const& current_url);
 
     void alert_closed();
     void confirm_closed(bool accepted);
@@ -195,8 +196,8 @@ private:
     virtual void page_did_click_link(URL::URL const&, ByteString const& target, unsigned modifiers) override;
     virtual void page_did_middle_click_link(URL::URL const&, ByteString const& target, unsigned modifiers) override;
     virtual void page_did_request_external_url(URL::URL const&, URL::Origin const& initiator_origin, bool has_transient_activation) override;
-    virtual void page_did_request_context_menu(Web::CSSPixelPoint, Web::ContextMenuForInputEventsTarget) override;
-    virtual void page_did_request_link_context_menu(Web::CSSPixelPoint, URL::URL const&, ByteString const& target, unsigned modifiers) override;
+    virtual void page_did_request_context_menu(Web::CSSPixelPoint, Web::ContextMenuForInputEventsTarget, GC::Ptr<Web::DOM::Range>) override;
+    virtual void page_did_request_link_context_menu(Web::CSSPixelPoint, URL::URL const&, ByteString const& target, unsigned modifiers, GC::Ptr<Web::DOM::Range>) override;
     virtual void page_did_request_image_context_menu(Web::CSSPixelPoint, URL::URL const&, ByteString const& target, unsigned modifiers, Optional<Gfx::Bitmap const*>) override;
     virtual void page_did_request_media_context_menu(Web::CSSPixelPoint, ByteString const& target, unsigned modifiers, Web::Page::MediaContextMenu const&) override;
     virtual void page_did_start_loading(Optional<Utf16String> const&, URL::URL const&, bool) override;
@@ -297,6 +298,7 @@ private:
     void setup_palette();
     ConnectionFromClient& client() const;
     void send_dom_mutation(Web::DOM::Node const& target, WebView::Mutation mutation);
+    Optional<u64> prepare_text_fragment_generation(GC::Ptr<Web::DOM::Range>);
 
     PageHost& m_owner;
     GC::Ref<Web::Page> m_page;
@@ -309,6 +311,8 @@ private:
     double m_maximum_frames_per_second { 60.0 };
     u64 m_id { 0 };
     u64 m_next_delete_all_cookies_request_id { 1 };
+    u64 m_next_text_fragment_generation_id { 1 };
+    HashMap<u64, GC::Ref<Web::DOM::Range>> m_pending_text_fragment_generation_ranges;
     HashMap<u64, GC::Ref<Web::WebIDL::Promise>> m_pending_delete_all_cookies_promises;
     HashMap<u64, GC::Ref<Web::Fetch::Infrastructure::FetchController>> m_download_controllers;
     HashMap<u64, GC::Ref<Web::Streams::ReadableStreamDefaultReader>> m_download_readers;

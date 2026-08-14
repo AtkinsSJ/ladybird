@@ -157,8 +157,9 @@ private:
     virtual void did_receive_download_data(u64 page_id, u64 download_id, ByteBuffer data) override;
     virtual void did_finish_download(u64 page_id, u64 download_id) override;
     virtual void did_fail_download(u64 page_id, u64 download_id, String error) override;
-    virtual void did_request_context_menu(u64 page_id, Gfx::IntPoint, Web::ContextMenuForInputEventsTarget) override;
-    virtual void did_request_link_context_menu(u64 page_id, Gfx::IntPoint, URL::URL, ByteString, unsigned) override;
+    virtual void did_request_context_menu(u64 page_id, Gfx::IntPoint, Web::ContextMenuForInputEventsTarget, Optional<u64> text_fragment_generation_id) override;
+    virtual void did_request_link_context_menu(u64 page_id, Gfx::IntPoint, URL::URL, ByteString, unsigned, Optional<u64> text_fragment_generation_id) override;
+    virtual void did_generate_text_fragment_url(u64 page_id, u64 request_id, Optional<URL::URL>) override;
     virtual void did_request_image_context_menu(u64 page_id, Gfx::IntPoint, URL::URL, ByteString, unsigned, Optional<Gfx::ShareableBitmap>) override;
     virtual void did_request_media_context_menu(u64 page_id, Gfx::IntPoint, ByteString, unsigned, Web::Page::MediaContextMenu) override;
     virtual void did_get_source(u64 page_id, URL::URL, URL::URL, Utf16String) override;
