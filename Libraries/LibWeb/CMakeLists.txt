@@ -739,6 +739,7 @@ set(SOURCES
     HTML/SyntaxHighlighter/SyntaxHighlighter.cpp
     HTML/TagNames.cpp
     HTML/TextDirective.cpp
+    HTML/TextDirectiveGenerator.cpp
     HTML/TextMetrics.cpp
     HTML/TextTrack.cpp
     HTML/TextTrackCue.cpp

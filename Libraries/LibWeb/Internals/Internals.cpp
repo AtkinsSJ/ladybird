@@ -71,6 +71,7 @@
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
 #include <LibWeb/HTML/SessionHistoryEntry.h>
 #include <LibWeb/HTML/SharedResourceRequest.h>
+#include <LibWeb/HTML/TextDirectiveGenerator.h>
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/Internals/InternalGamepad.h>
 #include <LibWeb/Internals/Internals.h>
@@ -498,6 +499,17 @@ Utf16String Internals::current_cursor()
 Utf16String Internals::selected_text_for_clipboard()
 {
     return page().focused_navigable().selected_text();
+}
+
+Optional<Utf16String> Internals::generate_text_fragment_url(DOM::Range& range, Utf16String const& current_url)
+{
+    auto url = DOMURL::parse(current_url.utf16_view());
+    if (!url.has_value())
+        return {};
+    auto generated_url = HTML::generate_text_fragment_url(window().associated_document(), range, *url);
+    if (!generated_url.has_value())
+        return {};
+    return Utf16String::from_utf8(generated_url->serialize());
 }
 
 void Internals::set_marked_text_from_input_method(Utf16String const& text)

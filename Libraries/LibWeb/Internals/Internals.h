@@ -85,6 +85,7 @@ public:
     Utf16String current_cursor();
 
     Utf16String selected_text_for_clipboard();
+    Optional<Utf16String> generate_text_fragment_url(DOM::Range&, Utf16String const& current_url);
 
     void set_marked_text_from_input_method(Utf16String const& text);
     void commit_text_from_input_method(Utf16String const& text, WebIDL::Long replacement_start, WebIDL::Long replacement_length);
