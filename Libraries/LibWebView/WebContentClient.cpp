@@ -1954,6 +1954,12 @@ void WebContentClient::did_close_browsing_context(u64 page_id)
     close_server_if_unused();
 }
 
+void WebContentClient::did_complete_close_preflight(u64 page_id, u64 request_id, bool approved)
+{
+    if (auto view = view_for_page_id(page_id); view.has_value())
+        view->did_complete_close_preflight({}, request_id, approved);
+}
+
 void WebContentClient::did_change_needs_beforeunload_check(u64 page_id, bool needs_beforeunload_check)
 {
     if (auto view = view_for_page_id(page_id); view.has_value())

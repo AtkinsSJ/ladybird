@@ -241,6 +241,7 @@ private:
     virtual Messages::WebContentClient::DidRequestNewWebViewResponse did_request_new_web_view(u64 page_id, Web::HTML::ActivateTab, Web::HTML::WebViewHints, bool clone_session_storage) override;
     virtual void did_request_activate_tab(u64 page_id) override;
     virtual void did_close_browsing_context(u64 page_id) override;
+    virtual void did_complete_close_preflight(u64 page_id, u64 request_id, bool approved) override;
     virtual void did_change_needs_beforeunload_check(u64 page_id, bool needs_beforeunload_check) override;
     virtual void webdriver_user_prompt_handling_complete(u64 page_id, u64 request_id, Web::WebDriver::Response response) override;
     virtual void webdriver_command_complete(u64 page_id, u64 command_id, Web::WebDriver::Response response) override;

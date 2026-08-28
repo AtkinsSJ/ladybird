@@ -289,6 +289,8 @@ public:
 
     void alert_closed();
     void before_unload_closed(bool accepted);
+    void request_close_preflight(Function<void(bool)> on_complete);
+    void did_complete_close_preflight(Badge<WebContentClient>, u64 request_id, bool approved);
     void confirm_closed(bool accepted);
     void prompt_closed(Optional<Utf16String> const& response);
     void color_picker_update(Optional<Color> picked_color, Web::HTML::ColorPickerUpdateState state);
@@ -370,6 +372,7 @@ public:
     void set_user_style_sheet(String const& source);
 
     void request_close();
+    Function<void()> prepare_for_close_without_prompting();
     Function<void()> prepare_for_immediate_close();
     bool needs_beforeunload_check() const { return m_needs_beforeunload_check; }
 
@@ -748,6 +751,9 @@ protected:
 
     u64 m_next_webdriver_user_prompt_request_id { 0 };
     HashMap<u64, Function<void(Web::WebDriver::Response)>> m_pending_webdriver_user_prompt_requests;
+
+    u64 m_next_close_preflight_request_id { 0 };
+    HashMap<u64, Function<void(bool)>> m_pending_close_preflight_requests;
     HashTable<u64> m_pending_webdriver_command_ids;
     HashTable<u64> m_pending_webdriver_crash_command_ids;
 

@@ -169,6 +169,7 @@ endpoint WebContentClient
     did_request_new_web_view(u64 page_id, Web::HTML::ActivateTab activate_tab, Web::HTML::WebViewHints hints, bool clone_session_storage) => (Optional<u64> new_page_id, Optional<Web::HTML::CrossProcessId> root_navigable_id, String handle)
     did_request_activate_tab(u64 page_id) =|
     did_close_browsing_context(u64 page_id) =|
+    did_complete_close_preflight(u64 page_id, u64 request_id, bool approved) =|
     did_change_needs_beforeunload_check(u64 page_id, bool needs_beforeunload_check) =|
     webdriver_user_prompt_handling_complete(u64 page_id, u64 request_id, Web::WebDriver::Response response) =|
     webdriver_command_complete(u64 page_id, u64 command_id, Web::WebDriver::Response response) =|

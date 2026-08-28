@@ -242,6 +242,8 @@ endpoint WebContentServer
     did_worker_agent_close(Web::HTML::WorkerAgentOwnerToken owner_token) =|
 
     request_close(u64 page_id) =|
+    request_close_preflight(u64 page_id, u64 request_id) =|
+    request_close_without_prompting(u64 page_id) =|
 
     exit_fullscreen(u64 page_id) =|
 }

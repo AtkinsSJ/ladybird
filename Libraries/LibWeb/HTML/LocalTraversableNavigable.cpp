@@ -60,6 +60,7 @@ void LocalTraversableNavigable::visit_edges(Cell::Visitor& visitor)
     visitor.visit(m_emulated_position_data);
     visitor.visit(m_emulated_position_data_observers);
     visitor.visit(m_storage_shed);
+    visitor.visit(m_active_beforeunload_check);
     for (auto& operation : m_history_operations) {
         visitor.visit(operation.value.source_snapshot_params);
         visitor.visit(operation.value.pending_document);
@@ -1145,10 +1146,12 @@ public:
     static constexpr int TIMEOUT_MS = 15000;
 
     CheckUnloadingCanceledState(
+        GC::Ref<LocalTraversableNavigable> owner,
         GC::Ptr<LocalTraversableNavigable> traversable,
         Optional<UserNavigationInvolvement> user_involvement,
         GC::Ref<GC::Function<void(Result)>> callback)
-        : m_traversable(traversable)
+        : m_owner(owner)
+        , m_traversable(traversable)
         , m_user_involvement(user_involvement)
         , m_callback(callback)
         , m_timeout(Platform::Timer::create_single_shot(heap(), TIMEOUT_MS, GC::create_function(heap(), [this] {
@@ -1170,9 +1173,21 @@ public:
         Base::visit_edges(visitor);
         for (auto& doc : m_phase2_documents)
             visitor.visit(doc);
+        for (auto& doc : m_documents_already_fired)
+            visitor.visit(doc);
         visitor.visit(m_traversable);
+        visitor.visit(m_owner);
         visitor.visit(m_callback);
+        visitor.visit(m_close_preflight_callback);
         visitor.visit(m_timeout);
+    }
+
+    void adopt_for_close(GC::Ref<GC::Function<void(bool)>> callback)
+    {
+        VERIFY(!m_close_preflight_callback);
+        m_close_preflight_callback = callback;
+        m_adopted_for_close = true;
+        ++m_phase2_generation;
     }
 
     // https://html.spec.whatwg.org/multipage/browsing-the-web.html#checking-if-unloading-is-canceled
@@ -1222,6 +1237,52 @@ public:
     }
 
 private:
+    bool document_was_already_fired(DOM::Document const& document) const
+    {
+        return m_documents_already_fired.find_if([&](auto const& fired_document) {
+            return fired_document.ptr() == &document;
+        }) != m_documents_already_fired.end();
+    }
+
+    DOM::Document::StepsToFireBeforeunloadResult fire_beforeunload(DOM::Document& document, bool unload_prompt_shown)
+    {
+        if (!document_was_already_fired(document))
+            m_documents_already_fired.append(document);
+
+        VERIFY(!m_owner->m_active_beforeunload_check);
+        m_owner->m_active_beforeunload_check = this;
+        auto result = document.steps_to_fire_beforeunload(unload_prompt_shown);
+        if (m_owner->m_active_beforeunload_check.ptr() == this)
+            m_owner->m_active_beforeunload_check = nullptr;
+        return result;
+    }
+
+    void continue_as_close_after_adoption(DOM::Document::StepsToFireBeforeunloadResult result)
+    {
+        auto [unload_prompt_shown, unload_prompt_canceled] = result;
+        if (unload_prompt_shown)
+            m_unload_prompt_shown = true;
+        if (unload_prompt_canceled) {
+            finish(Result::CanceledByBeforeUnload);
+            return;
+        }
+
+        m_running_adopted_close = true;
+        m_phase2_documents.clear();
+        m_remaining_phase2_tasks = 0;
+
+        if (auto active_document = m_owner->active_document()) {
+            for (auto& navigable : active_document->inclusive_descendant_navigables()) {
+                auto document = navigable->active_document();
+                if (!document || document_was_already_fired(*document))
+                    continue;
+                m_phase2_documents.append(*document);
+            }
+        }
+
+        start_phase2();
+    }
+
     bool has_pending_before_unload_dialog() const
     {
         if (m_traversable) {
@@ -1242,7 +1303,12 @@ private:
             // 1. if needsBeforeunload is true, then:
             if (m_needs_beforeunload) {
                 // 1. Let (unloadPromptShownForThisDocument, unloadPromptCanceledByThisDocument) be the result of running the steps to fire beforeunload given traversable's active document and false.
-                auto [unload_prompt_shown_for_this_document, unload_prompt_canceled_by_this_document] = m_traversable->active_document()->steps_to_fire_beforeunload(false);
+                auto result = fire_beforeunload(*m_traversable->active_document(), false);
+                if (m_adopted_for_close && !m_running_adopted_close) {
+                    continue_as_close_after_adoption(result);
+                    return;
+                }
+                auto [unload_prompt_shown_for_this_document, unload_prompt_canceled_by_this_document] = result;
 
                 // 2. If unloadPromptShownForThisDocument is true, then set unloadPromptShown to true.
                 if (unload_prompt_shown_for_this_document)
@@ -1300,6 +1366,7 @@ private:
 
         // 6. Let completedTasks be 0.
         m_remaining_phase2_tasks = m_phase2_documents.size();
+        auto generation = m_phase2_generation;
 
         // 7. For each document of documentsToFireBeforeunload, queue a global task on the navigation and traversal task source given document's relevant global object to run the steps:
         for (auto& document : m_phase2_documents) {
@@ -1307,14 +1374,23 @@ private:
             //         are only runnable when fully active. In the async state machine, documents can become non
             //         fully-active between queue and execution time, causing the task to be permanently stuck.
             //         A null-document task is always runnable; we check validity inside.
-            queue_a_task(Task::Source::NavigationAndTraversal, nullptr, nullptr, GC::create_function(heap(), [this, document] {
+            queue_a_task(Task::Source::NavigationAndTraversal, nullptr, nullptr, GC::create_function(heap(), [this, document, generation] {
+                if (generation != m_phase2_generation)
+                    return;
                 if (document->has_been_destroyed() || !document->is_fully_active()) {
                     did_complete_phase2_task();
                     return;
                 }
 
                 // 1. Let (unloadPromptShownForThisDocument, unloadPromptCanceledByThisDocument) be the result of running the steps to fire beforeunload given document and unloadPromptShown.
-                auto [unload_prompt_shown_for_this_document, unload_prompt_canceled_by_this_document] = document->steps_to_fire_beforeunload(m_unload_prompt_shown);
+                auto result = fire_beforeunload(document, m_unload_prompt_shown);
+                if (m_adopted_for_close && !m_running_adopted_close) {
+                    continue_as_close_after_adoption(result);
+                    return;
+                }
+                if (generation != m_phase2_generation)
+                    return;
+                auto [unload_prompt_shown_for_this_document, unload_prompt_canceled_by_this_document] = result;
 
                 // 2. If unloadPromptShownForThisDocument is true, then set unloadPromptShown to true.
                 if (unload_prompt_shown_for_this_document)
@@ -1348,6 +1424,12 @@ private:
             return;
         m_completed = true;
         m_timeout->stop();
+        if (m_adopted_for_close) {
+            m_callback->function()(final_result == Result::CanceledByBeforeUnload ? Result::CanceledByBeforeUnload : Result::CanceledByNavigate);
+            VERIFY(m_close_preflight_callback);
+            m_close_preflight_callback->function()(final_result == Result::Continue);
+            return;
+        }
         m_callback->function()(final_result);
     }
 
@@ -1357,11 +1439,17 @@ private:
     bool m_needs_beforeunload { false };
     size_t m_remaining_phase2_tasks { 0 };
     Vector<GC::Ref<DOM::Document>> m_phase2_documents;
+    Vector<GC::Ref<DOM::Document>> m_documents_already_fired;
+    GC::Ref<LocalTraversableNavigable> m_owner;
     GC::Ptr<LocalTraversableNavigable> m_traversable;
     RefPtr<SessionHistoryEntry> m_target_entry;
     Optional<UserNavigationInvolvement> m_user_involvement;
     GC::Ref<GC::Function<void(Result)>> m_callback;
+    GC::Ptr<GC::Function<void(bool)>> m_close_preflight_callback;
     GC::Ref<Platform::Timer> m_timeout;
+    u64 m_phase2_generation { 0 };
+    bool m_adopted_for_close { false };
+    bool m_running_adopted_close { false };
 };
 
 GC_DEFINE_ALLOCATOR(CheckUnloadingCanceledState);
@@ -1375,10 +1463,33 @@ void LocalTraversableNavigable::check_if_unloading_is_canceled(
     GC::Ref<GC::Function<void(CheckIfUnloadingIsCanceledResult)>> callback)
 {
     auto state = heap().allocate<CheckUnloadingCanceledState>(
+        *this,
         traversable,
         user_involvement_for_navigate_events,
         callback);
     state->start(navigables_that_need_before_unload, move(target_entry));
+}
+
+void LocalTraversableNavigable::request_close_preflight(GC::Ref<GC::Function<void(bool)>> callback)
+{
+    if (page().pending_dialog() != Page::PendingDialog::None) {
+        if (page().pending_dialog() == Page::PendingDialog::BeforeUnload && m_active_beforeunload_check) {
+            m_active_beforeunload_check->adopt_for_close(callback);
+            return;
+        }
+        callback->function()(false);
+        return;
+    }
+
+    auto active_document = this->active_document();
+    if (!active_document) {
+        callback->function()(true);
+        return;
+    }
+
+    check_if_unloading_is_canceled(active_document->inclusive_descendant_navigables(), GC::create_function(heap(), [callback](CheckIfUnloadingIsCanceledResult result) {
+        callback->function()(result == CheckIfUnloadingIsCanceledResult::Continue);
+    }));
 }
 
 void LocalTraversableNavigable::check_if_unloading_is_canceled(Vector<GC::Root<LocalNavigable>> navigables_that_need_before_unload, GC::Ref<GC::Function<void(CheckIfUnloadingIsCanceledResult)>> callback)

@@ -3857,6 +3857,34 @@ void ViewImplementation::request_close()
     client().request_close(page_id());
 }
 
+void ViewImplementation::request_close_preflight(Function<void(bool)> on_complete)
+{
+    auto request_id = m_next_close_preflight_request_id++;
+    m_pending_close_preflight_requests.set(request_id, move(on_complete));
+    client().async_request_close_preflight(page_id(), request_id);
+}
+
+void ViewImplementation::did_complete_close_preflight(Badge<WebContentClient>, u64 request_id, bool approved)
+{
+    if (auto on_complete = m_pending_close_preflight_requests.take(request_id); on_complete.has_value())
+        (*on_complete)(approved);
+}
+
+Function<void()> ViewImplementation::prepare_for_close_without_prompting()
+{
+    if (m_debugger_paused) {
+        resume_debugger(DebuggerResumeMode::Continue);
+        set_debugger_paused(false);
+    }
+
+    auto client = m_client_state.client;
+    auto page_id = m_client_state.page_index;
+    client->prepare_for_detached_close(page_id);
+    return [client = move(client), page_id] {
+        client->async_request_close_without_prompting(page_id);
+    };
+}
+
 Function<void()> ViewImplementation::prepare_for_immediate_close()
 {
     VERIFY(!needs_beforeunload_check());

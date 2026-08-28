@@ -32,6 +32,7 @@
 namespace Web::HTML {
 
 struct ChangingNavigableContinuationState;
+class CheckUnloadingCanceledState;
 
 // https://html.spec.whatwg.org/multipage/document-sequences.html#traversable-navigable
 class WEB_API LocalTraversableNavigable final : public LocalNavigable {
@@ -108,6 +109,7 @@ public:
         Continue,
     };
     void check_if_unloading_is_canceled(Vector<GC::Root<LocalNavigable>> navigables_that_need_before_unload, GC::Ref<GC::Function<void(CheckIfUnloadingIsCanceledResult)>> callback);
+    void request_close_preflight(GC::Ref<GC::Function<void(bool)>> callback);
 
     StorageAPI::StorageShed& storage_shed() { return m_storage_shed; }
     StorageAPI::StorageShed const& storage_shed() const { return m_storage_shed; }
@@ -128,6 +130,8 @@ public:
     }
 
 private:
+    friend class CheckUnloadingCanceledState;
+
     LocalTraversableNavigable(GC::Ref<Page>);
 
     virtual bool is_traversable() const override { return true; }
@@ -156,6 +160,8 @@ private:
     void apply_changing_navigable_history_step_continuation_impl(GC::Ref<ChangingNavigableContinuationState>, LocalApplyChangingNavigableHistoryStepContinuation, GC::Ref<GC::Function<void(Optional<ReplicatedNavigableState>, Optional<SessionHistoryEntryPersistedState>)>> on_complete);
 
     void check_if_unloading_is_canceled(Vector<GC::Root<LocalNavigable>> navigables_that_need_before_unload, GC::Ptr<LocalTraversableNavigable> traversable, RefPtr<SessionHistoryEntry> target_entry, Optional<UserNavigationInvolvement> user_involvement_for_navigate_events, GC::Ref<GC::Function<void(CheckIfUnloadingIsCanceledResult)>> callback);
+
+    GC::Ptr<CheckUnloadingCanceledState> m_active_beforeunload_check;
 
     // WebContent needs the canonical top-level entry count synchronously for is_script_closable().
     u64 m_session_history_entry_count { 1 };
