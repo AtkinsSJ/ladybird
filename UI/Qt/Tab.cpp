@@ -772,7 +772,8 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
     };
 
     view().on_close = [this] {
-        m_window->definitely_close_tab(tab_index());
+        if (!m_window_is_closing)
+            m_window->definitely_close_tab(tab_index());
     };
 
     view().on_link_hover = [this](auto const& url) {
@@ -788,6 +789,9 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
 
     view().on_loading_state_change = [this](bool is_loading) {
         set_loading(is_loading);
+    };
+    view().on_load_start = [this] {
+        m_window->cancel_window_close_preflight();
     };
     set_loading(view().is_loading());
 
@@ -1675,6 +1679,7 @@ void Tab::find_next()
 
 void Tab::request_close()
 {
+    m_window->cancel_window_close_preflight();
     m_suppress_javascript_dialogs_until_navigation = true;
     m_javascript_dialog->dismiss();
 
@@ -1722,12 +1727,15 @@ void Tab::request_window_close_preflight(Function<void(bool)> on_complete)
 
 void Tab::cancel_window_close_preflight()
 {
+    if (m_javascript_dialog->type() == JavaScriptDialog::Type::BeforeUnload)
+        m_javascript_dialog->dismiss();
     m_already_requested_close = false;
     m_suppress_javascript_dialogs_until_navigation = false;
 }
 
 Function<void()> Tab::prepare_for_window_close()
 {
+    m_window_is_closing = true;
     m_suppress_javascript_dialogs_until_navigation = true;
     m_javascript_dialog->dismiss();
     return view().prepare_for_close_without_prompting();

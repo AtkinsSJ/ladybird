@@ -200,6 +200,7 @@ private:
 
     bool m_suppress_javascript_dialogs_until_navigation { false };
     bool m_already_requested_close { false };
+    bool m_window_is_closing { false };
 };
 
 }
